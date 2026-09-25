@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "molbio-skills",
+  "version": "0.1.0",
+  "description": "Build, label and check SnapGene plasmid maps for MoClo Yeast Toolkit cloning.",
+  "author": {
+    "name": "Tito Damiani",
+    "url": "https://github.com/titodamiani"
+  },
+  "homepage": "https://github.com/titodamiani/molbio-skills",
+  "repository": "https://github.com/titodamiani/molbio-skills",
+  "license": "MIT",
+  "keywords": [
+    "snapgene",
+    "plasmid",
+    "golden-gate",
+    "moclo",
+    "yeast-toolkit",
+    "cloning"
+  ]
+}

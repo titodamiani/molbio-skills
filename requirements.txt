@@ -1,0 +1,8 @@
+# The skills install these by themselves the first time they run.
+# Listed here so the versions are on record and the repo can be set up by hand.
+biopython
+pydna
+
+# Only needed to rebuild data/ytk_parts.tsv from the published toolkit files.
+# pandas
+# xlrd
