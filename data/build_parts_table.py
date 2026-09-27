@@ -10,8 +10,10 @@ Two inputs, both from that kit:
     pYTK*.gb        one GenBank file per plasmid, gives the sequences
     YTK_Parts.xls   the parts list, gives the clean names and part types
 
-Run it like this:
-    python3 data/build_parts_table.py ~/Downloads/ytk/plasmids
+Both live in reference/ytk_plasmids/, so this needs no arguments:
+    python3 data/build_parts_table.py
+
+Pass a directory to read them from somewhere else.
 
 It writes data/ytk_parts.tsv next to this script.
 
@@ -35,6 +37,7 @@ from pydna.dseqrecord import Dseqrecord
 import pandas as pd
 
 OUT = Path(__file__).resolve().parent / "ytk_parts.tsv"
+PLASMIDS = Path(__file__).resolve().parents[1] / "reference" / "ytk_plasmids"
 
 COLUMNS = ["name", "part_type", "feature_type", "strand",
            "junction_5", "junction_3", "sequence"]
@@ -168,4 +171,4 @@ def main(ytk_dir):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "~/Downloads/ytk/plasmids")
+    main(sys.argv[1] if len(sys.argv) > 1 else PLASMIDS)

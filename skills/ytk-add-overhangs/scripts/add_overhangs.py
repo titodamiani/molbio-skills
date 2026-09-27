@@ -23,18 +23,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "lib"))
+import cds        # noqa: E402
+import enzymes    # noqa: E402
+import flanks     # noqa: E402
+import sequences  # noqa: E402
 import snapgene as sg
 
 OVERHANG_TABLE = ROOT / "data" / "ytk_overhangs.tsv"
 
-# The same on every part, whatever the type. Read outwards from the sequence:
-# the BsaI site cuts the part into an assembly, the BsmBI site cuts it out of
-# the ordered fragment, and the outer ten bases are there to hold a primer.
-LEFT_PREFIX = "actcgacaacCGTCTCatcGGTCTCa"
-RIGHT_SUFFIX = "tGAGACCtGAGACGgttgtggtgt"
-
-ENZYMES = {"BsmBI": ("CGTCTC", "GAGACG"), "BsaI": ("GGTCTC", "GAGACC")}
-STOP_CODONS = ("TAA", "TAG", "TGA")
 INSERT_COLOR = "#66ccff"
 
 
@@ -42,12 +38,6 @@ def read_overhangs():
     """The per-type adapter pair, from the shared table."""
     with open(OVERHANG_TABLE, newline="") as fh:
         return {row["part_type"]: row for row in csv.DictReader(fh, delimiter="\t")}
-
-
-def internal_sites(sequence):
-    """Names of the enzymes that cut inside the sequence."""
-    return [name for name, sites in ENZYMES.items()
-            if any(site in sequence for site in sites)]
 
 
 def check(name, sequence, adapters, allow_no_stop):
@@ -62,7 +52,7 @@ def check(name, sequence, adapters, allow_no_stop):
 
     coding = adapters["coding"]
     part_type = adapters["part_type"]
-    ends_in_stop = sequence[-3:] in STOP_CODONS
+    ends_in_stop = sequence[-3:] in cds.STOP_CODONS
 
     if coding and len(sequence) % 3:
         sys.exit(f"{name}: length {len(sequence)} is not a whole number of codons")
@@ -78,16 +68,13 @@ def check(name, sequence, adapters, allow_no_stop):
                  f"flank does not add one. Pass --no-stop-codon {name} if that is "
                  "intended")
 
-    warnings = []
-    for enzyme in internal_sites(sequence):
-        warnings.append(f"holds a {enzyme} site inside the sequence")
-    return warnings
+    return [f"holds a {enzyme} site inside the sequence"
+            for enzyme in enzymes.in_sequence(sequence)]
 
 
 def flank(sequence, adapters):
-    """The sequence to order."""
-    return (LEFT_PREFIX + adapters["left_adapter"] + sequence
-            + adapters["right_adapter"] + RIGHT_SUFFIX)
+    """The sequence to order, with both handles at full length."""
+    return flanks.flank(sequence, adapters)
 
 
 def write_snapgene(path, name, sequence, ordered, adapters):
@@ -97,7 +84,7 @@ def write_snapgene(path, name, sequence, ordered, adapters):
     purpose: SnapGene shows those live under Enzymes, so a fixed label there
     would only go stale.
     """
-    start = len(LEFT_PREFIX + adapters["left_adapter"])
+    start = flanks.insert_offset(adapters)
     feature = {
         "name": name,
         "type": "CDS" if adapters["coding"] else "misc_feature",
@@ -115,7 +102,8 @@ def write_snapgene(path, name, sequence, ordered, adapters):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sequence", help="one DNA sequence")
-    parser.add_argument("--input", help="a FASTA or CSV file of sequences")
+    parser.add_argument("--input", help=".fa, .fasta, .csv, .gb, .gbk or .dna")
+    parser.add_argument("--feature", help="which feature holds the CDS, for map files")
     parser.add_argument("--type", required=True, help="YTK part type, for example 3")
     parser.add_argument("--name", help="name for a single sequence")
     parser.add_argument("--format", default="dna", choices=["dna", "fasta", "csv"],
@@ -137,7 +125,12 @@ def main():
                  "Nothing was written. Pass --approve-unsure to go ahead anyway.")
 
     if args.input:
-        parts = [(name, seq.upper()) for name, seq, _ in sg.read_genes(Path(args.input))]
+        try:
+            parts = [(name, seq.upper())
+                     for name, seq, _ in sequences.read(Path(args.input), args.feature)]
+        except sequences.AmbiguousCDS as ambiguous:
+            sys.exit(f"{ambiguous}\n\n{ambiguous.table()}\n\n"
+                     "Say which one with --feature NAME.")
     elif args.name:
         parts = [(args.name, args.sequence.upper())]
     else:

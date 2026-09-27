@@ -115,9 +115,10 @@ class TestSequencesAreNeverChanged(unittest.TestCase):
         fragment = FRAGMENTS["Pi_fim_NCS_c5"]
         real_cut_insert = clone.cut_insert
 
-        def cut_a_changed_gene(sequence):
+        def cut_a_changed_gene(sequence, *enzyme):
             swapped = "C" if sequence[30] != "C" else "A"
-            return real_cut_insert(sequence[:30] + swapped + sequence[31:])
+            return real_cut_insert(sequence[:30] + swapped + sequence[31:],
+                                   *enzyme)
 
         clone.cut_insert = cut_a_changed_gene
         try:

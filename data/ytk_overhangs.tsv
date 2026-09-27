@@ -1,6 +1,6 @@
 part_type	left_adapter	right_adapter	coding	unsure	note
 1	CCCT	AACG
-2	AACG	agatcTATG
+2	AACG	agatcTATG				the agatc is a BglII site the paper asks for, overlapping the start codon
 3	T	ATCC	full		the left T plus the gene's own ATG makes the TATG junction
 3a	T	ggTTCT	start		N-terminal half of a fusion: no stop codon
 3b	TTCT	ATCC	end		C-terminal half of a fusion: starts mid-protein
@@ -8,11 +8,9 @@ part_type	left_adapter	right_adapter	coding	unsure	note
 4a	ATCC	taactcgagTGGC
 4b	TGGC	GCTG
 5	GCTG	TACA
-6	TACA	GAGT			plasmid, 2-micron or CEN
-7	GAGT	CCGA			plasmid origin
-8	CCGAgcggccgc	gcggccgcCCCT		The overhangs for this part type are not confirmed against the paper. They were stored wrongly in this repo until recently, so nobody has checked them since. Check with Teo before ordering.	bacterial origin and marker; NotI sites on both sides
-6-integration	TACA	GAGT			same overhangs as type 6
-7-integration	GAGT	CCGA			same overhangs as type 7
-8a-integration	CCGAgcggccgc	gcggccgcCAAT		The overhangs for this part type are not confirmed against the paper. They were stored wrongly in this repo until recently, so nobody has checked them since. Check with Teo before ordering.
-8b-integration	CAAT	CCCT
+6	TACA	GAGT			plasmid, 2-micron or CEN; integration uses the same overhangs
+7	GAGT	CCGA			plasmid origin; integration uses the same overhangs
+8	CCGAgcggccgc	gcggccgcCCCT			bacterial origin and marker; NotI sites on both sides
+8a	CCGAgcggccgc	gcggccgcCAAT			as type 8, for integration
+8b	CAAT	CCCT			5' homology arm, for integration
 custom	NNNN	NNNN			replace both NNNN yourself; read the paper first

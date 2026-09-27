@@ -15,6 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "lib"))
+import cds             # noqa: E402
 import flanks          # noqa: E402
 import primers         # noqa: E402
 import report          # noqa: E402
@@ -22,7 +23,6 @@ import sequences       # noqa: E402
 
 OVERHANG_TABLE = ROOT / "data" / "ytk_overhangs.tsv"
 PART_TYPE = "3"
-STOP_CODONS = ("TAA", "TAG", "TGA")
 
 
 def adapters():
@@ -32,19 +32,6 @@ def adapters():
             if row["part_type"] == PART_TYPE:
                 return row
     sys.exit(f"{OVERHANG_TABLE}: no row for part type {PART_TYPE}")
-
-
-def not_a_type_3_cds(sequence):
-    """Why this is not a full coding sequence, or None when it is fine."""
-    if not set(sequence) <= set("ACGT"):
-        return "holds something other than A, C, G and T"
-    if not sequence.startswith("ATG"):
-        return "does not start with ATG"
-    if sequence[-3:] not in STOP_CODONS:
-        return "does not end with a stop codon"
-    if len(sequence) % 3:
-        return f"length {len(sequence)} is not a whole number of codons"
-    return None
 
 
 def collect(inputs, one_sequence, one_name, feature):
@@ -86,9 +73,10 @@ def main():
 
     rows = []
     for name, sequence in found:
-        wrong = not_a_type_3_cds(sequence)
-        if wrong:
-            log.block(name, f"not a Type 3 CDS: {wrong}")
+        faults = cds.problems(sequence)
+        if faults:
+            for fault in faults:
+                log.block(name, f"not a Type 3 CDS: it {fault}")
             continue
         designed = primers.design(name, sequence, adapter_row, args.pad)
         if "blocked" in designed:

@@ -33,10 +33,18 @@ class Report:
         lines += [f"{name:{width}s}  {kind:8s}  {why}" for name, kind, why in rows]
         return "\n".join(lines)
 
+    def blocked_names(self):
+        """The sequences that are held up, each named once.
+
+        A sequence can have several faults, so the list of reasons is longer
+        than the list of sequences.
+        """
+        return list(dict.fromkeys(name for name, _ in self.blocked))
+
     def question(self):
         """The one thing to ask, or an empty string when nothing is blocking."""
-        if not self.blocked:
+        names = self.blocked_names()
+        if not names:
             return ""
-        names = ", ".join(name for name, _ in self.blocked)
-        return (f"{len(self.blocked)} of these need a decision before I go on: "
-                f"{names}. How would you like to handle them?")
+        return (f"{len(names)} of these need a decision before I go on: "
+                f"{', '.join(names)}. How would you like to handle them?")

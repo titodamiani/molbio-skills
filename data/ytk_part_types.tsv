@@ -1,0 +1,27 @@
+part_type	upstream	downstream	contents
+# The part-type overhangs, straight from the Yeast Toolkit paper:
+#   Lee, DeLoache, Cervantes, Dueber (2015) ACS Synth. Biol. 4, 975-986
+#   doi:10.1021/sb500366v  -  Supplementary Text, "Definition of Part Types"
+#
+# A part Type is defined ONLY by its flanking overhangs. What a part contains is
+# a convention, not a rule, which is why the fourth column is a description and
+# not a requirement.
+#
+# Every row was checked twice: against the paper, and against the 96 published
+# plasmid maps in reference/ytk_plasmids/, by finding their BsaI sites. Both
+# agree with every row. The overhangs chain into a circle:
+#   CCCT -> AACG -> TATG -> ATCC -> GCTG -> TACA -> GAGT -> CCGA -> CCCT
+1	CCCT	AACG	assembly connector, left
+2	AACG	TATG	promoter; the TATG doubles as the start codon
+3	TATG	ATCC	coding sequence, whole
+3a	TATG	TTCT	coding sequence, N-terminal half of a fusion
+3b	TTCT	ATCC	coding sequence, C-terminal half of a fusion
+4	ATCC	GCTG	terminator
+4a	ATCC	TGGC	C-terminal tag
+4b	TGGC	GCTG	terminator, after a 4a tag
+5	GCTG	TACA	assembly connector, right
+6	TACA	GAGT	yeast selectable marker
+7	GAGT	CCGA	yeast origin, or 3' homology arm for integration
+8	CCGA	CCCT	bacterial origin and marker; NotI sites both sides
+8a	CCGA	CAAT	as type 8, for integration
+8b	CAAT	CCCT	5' homology arm for integration
