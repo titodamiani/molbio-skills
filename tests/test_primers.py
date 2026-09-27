@@ -13,8 +13,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
-import flanks    # noqa: E402
-import primers   # noqa: E402
+import flanks     # noqa: E402
+import primers    # noqa: E402
+import sequences  # noqa: E402
 
 OLIGOS = Path.home() / "Downloads" / "oligo_stocks - Sheet1.csv"
 GENES = Path.home() / "Downloads" / "PiperGenes - Sheet1.csv"
@@ -173,6 +174,35 @@ class TestThePad(unittest.TestCase):
             self.assertLess(primer.index("CGTCTC"), pad + 1)
 
 
+class TestAnUnbalanceablePairIsStillReturned(unittest.TestCase):
+    """A pair that cannot be balanced to 2 C is handed back anyway, with a
+    warning, because a near miss is a usable starting point for finishing the
+    design by hand. An empty result is not."""
+
+    # AT-rich at the 5' end and GC-rich at the 3' end, so every forward
+    # candidate sits near 52 C and every reverse one above 73 C. Nothing brings
+    # them within 2 C of each other.
+    AWKWARD = ("ATGAAATTTAAATTTAACAAATTTAAATCAATAATAA"
+               "GCCGGCCGGCCGCCGGCCGGCCGCCGTAA")
+
+    def setUp(self):
+        self.designed = primers.design("awkward", self.AWKWARD, ADAPTERS)
+
+    def test_primers_still_come_out(self):
+        self.assertNotIn("blocked", self.designed)
+        self.assertTrue(self.designed["forward"])
+        self.assertTrue(self.designed["reverse"])
+
+    def test_it_says_to_finish_the_design_by_hand(self):
+        apart = [w for w in self.designed["warnings"] if "apart" in w]
+        self.assertEqual(len(apart), 1)
+        self.assertIn("by hand", apart[0])
+
+    def test_it_is_the_closest_pair_available(self):
+        gap = abs(self.designed["forward_tm"] - self.designed["reverse_tm"])
+        self.assertGreater(gap, primers.MAX_PAIR_GAP)
+
+
 class TestAnnealingTemperature(unittest.TestCase):
     """Combined Tm in the oligo sheet is not an average. It is NEB's annealing
     temperature: three degrees above the lower of the two primer Tms."""
@@ -183,6 +213,50 @@ class TestAnnealingTemperature(unittest.TestCase):
 
     def test_it_can_sit_above_both_primer_tms(self):
         self.assertGreater(primers.annealing_temp(60.0, 60.0), 60.0)
+
+
+class TestTellingTheInsertFromTheBackbone(unittest.TestCase):
+    """A part plasmid labels its resistance marker as a CDS and the insert as a
+    misc_feature, so picking the one CDS picks CamR. Known parts are set aside
+    first: by sequence against the published parts table, then by name."""
+
+    DATA = ROOT / "tests" / "data"
+
+    def test_the_insert_is_found_in_a_real_part_plasmid(self):
+        for filename, expected, length in (("pTP412.dna", "Pi_fim_NCS_c1", 588),
+                                           ("pTP414.dna", "Pi_fim_NCS_c3", 486)):
+            with self.subTest(filename=filename):
+                [(name, gene, _)] = sequences.read(self.DATA / filename)
+                self.assertEqual(name, expected)
+                self.assertEqual(len(gene), length)
+
+    def test_the_insert_matches_the_gene_file_exactly(self):
+        genes = {name: gene for name, gene, _
+                 in sequences.read(self.DATA / "genes.fasta")}
+        [(name, gene, _)] = sequences.read(self.DATA / "pTP412.dna")
+        self.assertEqual(gene, genes[name])
+
+    def test_camr_is_recognised_by_its_sequence(self):
+        marked = {f["name"]: f.get("known_part")
+                  for f in self._features("pTP412.dna")}
+        self.assertEqual(marked["CamR"], "CamR")
+        self.assertIsNone(marked["Pi_fim_NCS_c1"])
+
+    def test_a_marker_under_another_name_is_caught_by_the_catalogue(self):
+        catalogue = dict(sequences._load_backbone_names())
+        for marker in ("ampr", "bla", "kanr", "cole1", "ura3"):
+            self.assertIn(marker, catalogue)
+
+    def test_a_short_gene_name_is_not_mistaken_for_a_marker(self):
+        # "cat" must match only on its own, or a catalase would be discarded.
+        self.assertTrue(dict(sequences._load_backbone_names())["cat"])
+
+    def _features(self, filename):
+        import snapgene as sg
+        contents = sg.read_dna(self.DATA / filename)
+        whole = contents["sequence"].upper()
+        return sequences._mark_known_parts(
+            sequences._snapgene_features(contents["features_xml"]), whole)
 
 
 @needs_fixture
@@ -211,8 +285,13 @@ class TestTheRealPrimers(unittest.TestCase):
                     self.assertIn(binding[-1], "GC")
                     self.assertGreaterEqual(d[f"{side}_tm"], primers.TM_FLOOR)
                     self.assertLessEqual(len(d[side]), primers.TARGET_LENGTH)
+
+    def test_all_twenty_pairs_balance_within_two_degrees(self):
+        for gene, d in self.designed.items():
+            with self.subTest(gene=gene):
                 gap = abs(d["forward_tm"] - d["reverse_tm"])
                 self.assertLessEqual(gap, primers.MAX_PAIR_GAP)
+                self.assertFalse([w for w in d["warnings"] if "apart" in w])
 
     def test_the_binding_regions_come_from_the_gene_unchanged(self):
         for gene, sequence, _, _ in self.pairs:

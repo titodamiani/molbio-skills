@@ -33,9 +33,15 @@ python3 skills/ytk-design-primers/scripts/design_primers.py \
     --sequence ATGAAA...TAA --name my_gene --outdir out/
 ```
 
-Input can be `.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`. A map file with
-several features will stop and list them; pass `--feature NAME` to say which
-one holds the coding sequence.
+Input can be `.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`.
+
+**Map files:** a plasmid map holds the insert plus the vector's own machinery,
+and a resistance marker is usually labelled `CDS` while the insert is labelled
+`misc_feature`. So markers and origins are set aside before the insert is
+picked: first by matching a feature's sequence against the published parts in
+`data/ytk_parts.tsv`, then by name against `data/backbone_features.tsv`. If one
+feature is left, it is used. If several are, the run stops and lists them, and
+`--feature NAME` says which to take.
 
 ## What comes out
 
@@ -86,11 +92,16 @@ Unless the person already said what to do, stop and ask when:
 - the sequence is not a valid Type 3 CDS - no ATG, no stop codon, or a length
   that is not a whole number of codons
 - the sequence holds a BsmBI or BsaI site
-- no primer pair meets the rules
 - a primer would have to be longer than 50 bp
+- no binding region at all can be found
 
 In a batch, do not stop at the first problem. The script collects every problem,
 prints one table, and asks once. Show the person that table.
+
+**A pair that will not balance is not a refusal.** If nothing gets the two Tms
+within 2 C, the closest pair still comes out, with a warning saying so. It is a
+starting point for finishing the design by hand, which is more use than
+nothing. Point out the warning; do not present those primers as finished.
 
 ## Where the Tm comes from
 

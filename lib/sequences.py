@@ -5,6 +5,7 @@ GenBank and SnapGene files hold a whole map with many features, so the coding
 sequence has to be picked out. That choice is never guessed: when it is not
 obvious the run stops and asks.
 """
+import csv
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -12,12 +13,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import snapgene as sg
 
+DATA = Path(__file__).resolve().parents[1] / "data"
+PARTS_TABLE = DATA / "ytk_parts.tsv"
+BACKBONE_TABLE = DATA / "backbone_features.tsv"
+
 PLAIN_FORMATS = {".fa", ".fasta", ".csv"}
 GENBANK_FORMATS = {".gb", ".gbk"}
 
-# Features that are never the coding sequence, so they are not worth offering.
+# Feature types that are never the coding sequence, so they are not worth
+# offering.
 NOT_A_GENE = {"source", "primer_bind", "rep_origin", "terminator", "promoter",
               "RBS", "protein_bind"}
+
+# Below this, a sequence match against the parts table is not worth trusting.
+SHORTEST_PART_MATCH = 60
 
 
 class AmbiguousCDS(Exception):
@@ -68,8 +77,9 @@ def _read_genbank(path, feature):
              "strand": item.location.strand or 1}
             for item in record.features
         ]
-        chosen = _choose(path, features, feature)
-        sequence = str(record.seq).upper()[chosen["start"]:chosen["end"]]
+        whole = str(record.seq).upper()
+        chosen = _choose(path, _mark_known_parts(features, whole), feature)
+        sequence = whole[chosen["start"]:chosen["end"]]
         if chosen["strand"] == -1:
             sequence = _reverse_complement(sequence)
         found.append((chosen["name"], sequence, None))
@@ -85,9 +95,10 @@ def _genbank_label(item):
 
 def _read_snapgene(path, feature):
     contents = sg.read_dna(path)
+    whole = contents["sequence"].upper()
     features = _snapgene_features(contents.get("features_xml", ""))
-    chosen = _choose(path, features, feature)
-    sequence = contents["sequence"].upper()[chosen["start"]:chosen["end"]]
+    chosen = _choose(path, _mark_known_parts(features, whole), feature)
+    sequence = whole[chosen["start"]:chosen["end"]]
     if chosen["strand"] == -1:
         sequence = _reverse_complement(sequence)
     return (chosen["name"], sequence, None)
@@ -137,12 +148,62 @@ def _choose(path, features, wanted):
 
     # Preferring the one feature typed CDS looks reasonable and is not safe: in
     # a real part plasmid the only CDS is the CamR marker, while the insert is
-    # labelled misc_feature. So the rule is simply one candidate or ask.
-    candidates = sorted((f for f in features if f["type"] not in NOT_A_GENE),
-                        key=lambda f: f["start"] - f["end"])
+    # labelled misc_feature. So known backbone machinery is set aside first.
+    possible = sorted((f for f in features if f["type"] not in NOT_A_GENE),
+                      key=lambda f: f["start"] - f["end"])
+    candidates = [f for f in possible if not f.get("known_part")]
     if len(candidates) == 1:
         return candidates[0]
-    raise AmbiguousCDS(path, candidates)
+    # Everything recognised means there is no insert here, so offer the lot.
+    raise AmbiguousCDS(path, candidates or possible)
+
+
+def _load_parts():
+    """Sequences of the published YTK parts, both strands, longest first."""
+    known = {}
+    with open(PARTS_TABLE, newline="") as fh:
+        for row in csv.DictReader(fh, delimiter="\t"):
+            sequence = row["sequence"].upper()
+            if len(sequence) >= SHORTEST_PART_MATCH:
+                known[sequence] = row["name"]
+                known[_reverse_complement(sequence)] = row["name"]
+    return known
+
+
+def _load_backbone_names():
+    """(normalised name, exact?) for features that belong to a vector."""
+    names = []
+    with open(BACKBONE_TABLE, newline="") as fh:
+        for row in csv.DictReader(fh, delimiter="\t"):
+            if row["name"].startswith("#") or not row["name"]:
+                continue
+            names.append((_normalise(row["name"]), row["match"] == "exact"))
+    return names
+
+
+def _normalise(name):
+    return "".join(character for character in name.lower()
+                   if character.isalnum())
+
+
+def _mark_known_parts(features, sequence):
+    """Flag the features that are vector machinery rather than an insert.
+
+    A sequence match against the published parts table is the strong test,
+    because it holds whatever the feature happens to be labelled. The name
+    catalogue is the backstop for vectors that are not from the toolkit.
+    """
+    parts = _load_parts()
+    catalogue = _load_backbone_names()
+    for feature in features:
+        span = sequence[feature["start"]:feature["end"]].upper()
+        name = _normalise(feature["name"])
+        by_sequence = parts.get(span)
+        by_name = next((entry for entry, exact in catalogue
+                        if name == entry or (not exact and entry in name)), None)
+        if by_sequence or by_name:
+            feature["known_part"] = by_sequence or by_name
+    return features
 
 
 def _reverse_complement(sequence):

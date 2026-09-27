@@ -135,21 +135,16 @@ def design(name, sequence, adapters, pad=flanks.MIN_PAD):
                            f"ends in G or C and reaches {TM_FLOOR} C within "
                            f"{TARGET_LENGTH} bp"}
 
-    # The pair must be balanced to within MAX_PAIR_GAP, so that is a filter and
-    # not a preference. When nothing fits, say how close the best pair got and
-    # let the person decide, rather than quietly handing back a pair that breaks
-    # the rule.
+    # Balancing the pair to within MAX_PAIR_GAP comes before anything else, so
+    # it filters rather than nudges. When no pair manages it, the closest one is
+    # still handed back with a warning: a near miss is a useful starting point
+    # for designing the rest by hand, and an empty result is not.
     pairs = [(f, r) for f in forwards for r in reverses]
     balanced = [pair for pair in pairs if abs(pair[0][1] - pair[1][1]) <= MAX_PAIR_GAP]
-    if not balanced:
-        closest = min(pairs, key=lambda pair: abs(pair[0][1] - pair[1][1]))
-        gap = abs(closest[0][1] - closest[1][1])
-        return {"name": name,
-                "blocked": f"the closest pair is {gap:.1f} C apart, over the "
-                           f"{MAX_PAIR_GAP:.0f} C limit",
-                "closest": _describe(name, sequence, closest, adapters, pad)}
-
-    best = min(balanced, key=lambda pair: _rank(*pair))
+    if balanced:
+        best = min(balanced, key=lambda pair: _rank(*pair))
+    else:
+        best = min(pairs, key=lambda pair: abs(pair[0][1] - pair[1][1]))
     return _describe(name, sequence, best, adapters, pad)
 
 
@@ -181,7 +176,10 @@ def _describe(name, sequence, pair, adapters, pad):
                             f"{TARGET_LENGTH}")
     gap = abs(tm_f - tm_r)
     if gap > MAX_PAIR_GAP:
-        warnings.append(f"the pair is {gap:.1f} C apart, over {MAX_PAIR_GAP:.0f}")
+        warnings.append(
+            f"the pair is {gap:.1f} C apart and no pair got within "
+            f"{MAX_PAIR_GAP:.0f} C; this is the closest there is, so treat it as "
+            f"a starting point and finish it by hand")
 
     return {
         "name": name,

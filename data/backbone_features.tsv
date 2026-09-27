@@ -1,0 +1,53 @@
+name	match	kind	note
+# Features that belong to a vector backbone rather than to the sequence someone
+# is cloning. Used to tell the insert apart from the machinery in a map file
+# that labels several things as CDS.
+#
+# The first and strongest check is not in this file: any feature whose sequence
+# matches a published YTK part in data/ytk_parts.tsv is a known part, whatever
+# it happens to be labelled. This file is the backstop for vectors that are not
+# from the toolkit.
+#
+# "match" is how the name is compared, after lowercasing and dropping anything
+# that is not a letter or a digit. Use exact for names short enough to turn up
+# inside an unrelated word.
+ampr	contains	bacterial marker	ampicillin
+bla	exact	bacterial marker	ampicillin, by gene name
+kanr	contains	bacterial marker	kanamycin
+neo	exact	bacterial marker	kanamycin/neomycin, by gene name
+aph	exact	bacterial marker	kanamycin, by gene name
+camr	contains	bacterial marker	chloramphenicol
+chloramphenicol	contains	bacterial marker
+cat	exact	bacterial marker	chloramphenicol, by gene name
+specr	contains	bacterial marker	spectinomycin
+aada	contains	bacterial marker	spectinomycin, by gene name
+tetr	contains	bacterial marker	tetracycline
+gentamicin	contains	bacterial marker
+zeocin	contains	dual marker
+zeor	contains	dual marker
+hygromycin	contains	dual marker
+hygr	contains	dual marker
+nourseothricin	contains	yeast marker
+natr	contains	yeast marker
+ura3	contains	yeast marker
+leu2	contains	yeast marker
+his3	contains	yeast marker
+trp1	contains	yeast marker
+met15	contains	yeast marker
+ade2	contains	yeast marker
+lys2	contains	yeast marker
+cole1	contains	origin
+pmb1	contains	origin
+pbr322	contains	origin
+pucori	contains	origin
+f1ori	contains	origin
+oriv	contains	origin
+orit	contains	origin
+2micron	contains	yeast origin
+cenars	contains	yeast origin
+sfgfp	contains	screening marker	green/white dropout
+gfpdropout	contains	screening marker
+mrfp1	contains	screening marker	red/white dropout
+lacz	contains	screening marker
+ccdb	contains	counter-selection
+sacb	contains	counter-selection
