@@ -5,35 +5,46 @@ description: Run the whole MoClo Yeast Toolkit (YTK) job for a list of genes in 
 
 # Run the whole job
 
-This skill runs the three other YTK skills in order for a batch of genes.
+This skill runs the other YTK skills in order for a batch of genes. The input
+is still the bare gene file. The overhangs are added along the way.
 
 It has no scripts of its own. It uses the other skills, so each one keeps
 working on its own if someone installs only that one.
 
 ## The order
 
-**1. Build the maps** — use the **ytk-clone** skill.
+**1. Add the overhangs** — use the **ytk-add-overhangs** skill.
 
-Read its SKILL.md and run its script with the gene file and an output folder.
-That writes one linear `.dna` per gene and one circular `.dna` per plasmid.
+Read its SKILL.md and run its script with the gene file, the part type and an
+output folder. That flanks each gene, which is what a synthesis company would
+be sent. Use `--format csv`, so step 2 has a file of fragments to read.
 
-**2. Label the maps** — use the **ytk-annotate** skill.
+Skip this step only if the person already has the flanked fragments.
 
-Read its SKILL.md and run its script over the plasmid files from step 1, with
-`--genes` pointing at the same gene file. That puts the part labels and the
-gene name on each map.
+**2. Build the maps** — use the **ytk-clone** skill.
 
-**3. Check the results** — use the **ytk-qc** skill.
+Read its SKILL.md and run its script with the fragment file from step 1 and an
+output folder. That writes one linear `.dna` per fragment and one circular
+`.dna` per plasmid.
 
-Read its SKILL.md and run its script over the files from step 2, with
-`--genes` pointing at the same gene file. If the person has reference files
-made by hand, run it once per file with `--reference` as well.
+**3. Label the maps** — use the **ytk-annotate** skill.
+
+Read its SKILL.md and run its script over the plasmid files from step 2, with
+`--genes` pointing at the original gene file, not the fragment file. The
+labels should name the gene, not the flanked fragment.
+
+**4. Check the results** — use the **ytk-qc** skill.
+
+Read its SKILL.md and run its script over the files from step 3, with
+`--genes` pointing at the original gene file. If the person has reference
+files made by hand, run it once per file with `--reference` as well.
 
 ## Before you start
 
-Ask for two things if they are not already clear:
+Ask for three things if they are not already clear:
 
 - the gene file, CSV or FASTA
+- the part type, for example type 3 for a coding sequence. Never guess it
 - where the output should go
 
 A CSV can carry a plasmid name column, and that is the better input. If you

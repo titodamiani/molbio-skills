@@ -40,13 +40,20 @@ def load(path):
 
 clone = load(ROOT / "skills" / "ytk-clone" / "scripts" / "clone.py")
 annotate = load(ROOT / "skills" / "ytk-annotate" / "scripts" / "annotate.py")
+overhangs = load(ROOT / "skills" / "ytk-add-overhangs" / "scripts" / "add_overhangs.py")
 
 GENES = {name: seq for name, seq, _ in sg.read_genes(DATA / "genes.fasta")}
 BACKBONE = clone.backbone_sequence()
 
+# ytk-clone now takes the fragment as ordered, so the genes are flanked here
+# the same way ytk-add-overhangs flanks them. That makes these cases a test of
+# the two skills together.
+ADAPTERS = overhangs.read_overhangs()
+FRAGMENTS = {name: overhangs.flank(seq, ADAPTERS["3"]) for name, seq in GENES.items()}
+
 
 def build(gene_name):
-    return clone.assemble(GENES[gene_name], BACKBONE)
+    return clone.assemble(FRAGMENTS[gene_name], BACKBONE)
 
 
 def reference(name):
@@ -86,12 +93,26 @@ class TestSequencesAreNeverChanged(unittest.TestCase):
                     sg.write_dna(path, gene, circular=False)
                     self.assertEqual(gene, sg.read_dna(path)["sequence"])
 
+    def test_a_bare_gene_is_refused(self):
+        # The flanks are no longer added here, so a bare gene has nothing to
+        # cut. Adding the flanks for the person would assume a fragment design
+        # they may never have ordered.
+        with self.assertRaises(clone.WrongFragment):
+            clone.assemble(GENES["Pi_fim_NCS_c5"], BACKBONE)
+
+    def test_the_wrong_part_type_is_refused(self):
+        # Type 5 flanks cut cleanly, but the overhangs do not fit pYTK001.
+        fragment = overhangs.flank(GENES["Pi_fim_NCS_c5"], ADAPTERS["5"])
+        with self.assertRaises(clone.WrongFragment):
+            clone.assemble(fragment, BACKBONE)
+
     def test_the_run_stops_if_a_gene_came_out_changed(self):
         # Make the assembly quietly change one base in the middle of the gene.
         # The sticky ends come from the flanks, so the loop still closes and
         # the plasmid still looks perfectly normal. Only the check catches it.
         # Without the check this would be written to a .dna file and used.
         gene = GENES["Pi_fim_NCS_c5"]
+        fragment = FRAGMENTS["Pi_fim_NCS_c5"]
         real_cut_insert = clone.cut_insert
 
         def cut_a_changed_gene(sequence):
@@ -101,12 +122,13 @@ class TestSequencesAreNeverChanged(unittest.TestCase):
         clone.cut_insert = cut_a_changed_gene
         try:
             with self.assertRaises(clone.SequenceChanged):
-                clone.assemble(gene, BACKBONE)
+                clone.assemble(fragment, BACKBONE)
         finally:
             clone.cut_insert = real_cut_insert
 
         # and the honest case still works once the meddling is undone
-        self.assertIsNotNone(sg.find_in_circle(clone.assemble(gene, BACKBONE), gene))
+        self.assertIsNotNone(
+            sg.find_in_circle(clone.assemble(fragment, BACKBONE), gene))
 
     def test_a_sequence_with_odd_letters_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -125,7 +147,7 @@ class TestPTP412(unittest.TestCase):
         self.wanted = reference("pTP412")
 
     def test_the_gene_really_does_hold_an_extra_site(self):
-        self.assertTrue(clone.has_internal_site(GENES["Pi_fim_NCS_c1"]))
+        self.assertTrue(clone.has_internal_site(FRAGMENTS["Pi_fim_NCS_c1"]))
 
     def test_same_circle_as_the_reference(self):
         self.assertTrue(sg.same_circle(self.wanted, self.built))
@@ -170,7 +192,7 @@ class TestPTP0457(unittest.TestCase):
         # The two pieces join at two sticky ends. Each end is 4 bases that the
         # two pieces share, so the loop is 8 bases shorter than the sum.
         expected = (len(clone.cut_backbone(BACKBONE))
-                    + len(clone.cut_insert(self.gene)) - 2 * 4)
+                    + len(clone.cut_insert(FRAGMENTS["Pi_fim_OMT_c1"])) - 2 * 4)
         self.assertEqual(expected, len(self.built))
 
     def test_still_matches_the_map_the_original_code_made(self):
@@ -212,6 +234,22 @@ class TestLinearWriter(unittest.TestCase):
 
     def test_matches_the_hand_made_reference(self):
         self.assertEqual(reference("Pi_fim_NCS_c1"), self.written["sequence"])
+
+
+class TestPartsTable(unittest.TestCase):
+    """The parts table is generated. Two rows sharing a sequence means the
+    generator picked the wrong fragment out of a plasmid, which is how three
+    different bacterial markers once ended up as the same GFP dropout."""
+
+    def test_no_two_rows_share_a_sequence(self):
+        import collections
+        import csv
+        with open(ROOT / "data" / "ytk_parts.tsv", newline="") as fh:
+            rows = list(csv.DictReader(fh, delimiter="\t"))
+        seen = collections.Counter(row["sequence"] for row in rows)
+        shared = [seq for seq, count in seen.items() if count > 1]
+        names = [row["name"] for row in rows if row["sequence"] in shared]
+        self.assertEqual([], names)
 
 
 class TestInput(unittest.TestCase):

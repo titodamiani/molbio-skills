@@ -1,0 +1,18 @@
+part_type	left_adapter	right_adapter	coding	unsure	note
+1	CCCT	AACG
+2	AACG	agatcTATG
+3	T	ATCC	full		the left T plus the gene's own ATG makes the TATG junction
+3a	T	ggTTCT	start		N-terminal half of a fusion: no stop codon
+3b	TTCT	ATCC	end		C-terminal half of a fusion: starts mid-protein
+4	ATCCtaactcgag	GCTG			the taa ctcgag is a stop codon plus an XhoI site
+4a	ATCC	taactcgagTGGC
+4b	TGGC	GCTG
+5	GCTG	TACA
+6	TACA	GAGT			plasmid, 2-micron or CEN
+7	GAGT	CCGA			plasmid origin
+8	CCGAgcggccgc	gcggccgcCCCT		The overhangs for this part type are not confirmed against the paper. They were stored wrongly in this repo until recently, so nobody has checked them since. Check with Teo before ordering.	bacterial origin and marker; NotI sites on both sides
+6-integration	TACA	GAGT			same overhangs as type 6
+7-integration	GAGT	CCGA			same overhangs as type 7
+8a-integration	CCGAgcggccgc	gcggccgcCAAT		The overhangs for this part type are not confirmed against the paper. They were stored wrongly in this repo until recently, so nobody has checked them since. Check with Teo before ordering.
+8b-integration	CAAT	CCCT
+custom	NNNN	NNNN			replace both NNNN yourself; read the paper first

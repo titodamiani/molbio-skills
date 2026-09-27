@@ -3,9 +3,10 @@
 Makes SnapGene plasmid maps for MoClo Yeast Toolkit cloning, so you do not
 have to build them by hand.
 
-You give it a list of genes. It works out what each finished plasmid looks
-like, writes a SnapGene `.dna` file for every gene and every plasmid, puts the
-part labels on each map, and checks the results.
+You give it a list of genes. It puts the Golden Gate overhangs on each one,
+works out what each finished plasmid looks like, writes a SnapGene `.dna` file
+for every fragment and every plasmid, puts the part labels on each map, and
+checks the results.
 
 It only knows the Yeast Toolkit. That is on purpose.
 
@@ -25,12 +26,21 @@ first time a skill runs it checks for what it needs and installs it.
 
 Just ask. For example:
 
+> Add Type 3 overhangs to the genes in `candidates.fasta` and put the
+> fragments in `out/`.
+
+Or, from genes to finished maps:
+
 > Take the genes in `candidates.fasta` and make me plasmid maps in `out/`.
 
 Or, for the whole job at once:
 
 > Run the full YTK job on `genes.csv` and check the results against my files
 > in `refs/`.
+
+Always say the part type — type 3 for a coding sequence, for example. The
+tool never guesses it, because a wrong type puts the part in the wrong slot of
+an assembly and nothing downstream would notice.
 
 ## What you give it
 
@@ -71,23 +81,33 @@ stops.
 
 ## What you get back
 
-For each gene, two files:
+From the overhangs step, one file per gene:
 
-- `<gene>.dna` — the gene on its own, linear
+- `<gene>_oh.dna` — the fragment to order, with the flanks on it
+
+Then, for each fragment, two more:
+
+- `<fragment>.dna` — the fragment on its own, linear
 - `<plasmid>.dna` — the finished circular plasmid, with labels
 
 Open them in SnapGene as usual.
 
-## The four skills
+## The five skills
 
 | Skill | What it does |
 |---|---|
-| `ytk-clone` | Builds the plasmid maps from your genes. |
+| `ytk-add-overhangs` | Puts the YTK flanks on a gene, ready to order. |
+| `ytk-clone` | Builds the plasmid maps from flanked fragments. |
 | `ytk-annotate` | Puts the part labels on a map. |
 | `ytk-qc` | Checks a map, on its own or against a reference. |
-| `ytk-batch` | Runs all three in order. |
+| `ytk-batch` | Runs all four in order. |
 
 Each one works on its own. You can also ask for just one of them.
+
+`ytk-clone` takes the fragment as ordered, with the flanks already on it. Hand
+it a bare gene and it stops and sends you to `ytk-add-overhangs`. It will not
+add the flanks for you, because that would assume a fragment design you may
+never have ordered.
 
 ## Two things worth knowing
 
@@ -106,7 +126,16 @@ failure.
 coding sequence. The tool handles it and leaves the gene alone. It flags
 those genes, because at the bench they cannot be re-cut with the same enzyme.
 
-## The parts table
+**Stop codons.** A coding sequence has to bring its own stop codon. The flanks
+do not add one. If a gene has no stop codon the run stops, and you say
+`--no-stop-codon <name>` if that was on purpose.
+
+## The two tables
+
+`data/ytk_overhangs.tsv` holds the flanks for every part type, one row each.
+`ytk-add-overhangs` reads it. A row can also carry a note in the `unsure`
+column, and then that part type stops the run until someone approves it. When
+the overhangs are confirmed, clearing the cell turns the gate off.
 
 `data/ytk_parts.tsv` holds every toolkit part: its name, its type, its
 sequence and its two junctions. Both `ytk-clone` and `ytk-annotate` read it.
@@ -142,6 +171,10 @@ The reference `.dna` files in `tests/data/` were made by hand in SnapGene.
 The five cases each cover something different: a map that starts elsewhere on
 the circle, a gene with a BsmBI site inside it, a gene with a BsaI site
 inside it, a long insert, and the linear writer.
+
+The genes in `tests/data/` are bare, and the tests flank them with
+`ytk-add-overhangs` before cloning. So the two skills are tested together, and
+the finished maps still have to match the files made by hand.
 
 ## Licence
 
