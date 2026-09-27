@@ -36,9 +36,8 @@ DOUBLE_STRANDED = 0x02
 def require(package, module=None):
     """Stop with the pip command when a package is missing.
 
-    This used to install the package instead. It no longer does: pip would
-    fetch the newest release rather than the version pinned in
-    requirements.txt, which made the pins decoration.
+    Nothing is installed here, because pip would fetch the newest release
+    rather than the version pinned in requirements.txt.
     """
     deps.require(module or package)
 

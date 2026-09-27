@@ -1,7 +1,6 @@
 """The Type IIS enzymes YTK uses, and finding their sites in a sequence.
 
-This is the one home for the enzyme check. It used to exist twice, once in
-ytk-add-overhangs and once in ytk-clone, with two different implementations.
+The one home for the enzyme check, so every skill counts sites the same way.
 """
 
 # Recognition sequence, and the same site read on the other strand. Reading

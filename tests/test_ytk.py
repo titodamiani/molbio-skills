@@ -39,7 +39,7 @@ def load(path):
 
 
 clone = load(ROOT / "skills" / "ytk-clone" / "scripts" / "clone.py")
-annotate = load(ROOT / "skills" / "ytk-annotate" / "scripts" / "annotate.py")
+annotate = load(ROOT / "skills" / "ytk-annotate-map" / "scripts" / "annotate_map.py")
 overhangs = load(ROOT / "skills" / "ytk-add-overhangs" / "scripts" / "add_overhangs.py")
 
 GENES = {name: seq for name, seq, _ in sg.read_genes(DATA / "genes.fasta")}

@@ -1,180 +1,203 @@
 # molbio-skills
 
-Makes SnapGene plasmid maps for MoClo Yeast Toolkit cloning, so you do not
-have to build them by hand.
+Does the MoClo Yeast Toolkit cloning work you would otherwise do by hand in
+SnapGene and Excel.
 
-You give it a list of genes. It puts the Golden Gate overhangs on each one,
-works out what each finished plasmid looks like, writes a SnapGene `.dna` file
-for every fragment and every plasmid, puts the part labels on each map, and
-checks the results.
+Give it a coding sequence, or a hundred. It checks them, designs the PCR primers,
+works out what each finished plasmid looks like, and writes labelled SnapGene
+`.dna` files.
 
 It only knows the Yeast Toolkit. That is on purpose.
 
 ## Install
 
-In Claude Code, run these two lines:
+In Claude Code:
 
 ```
 /plugin marketplace add titodamiani/molbio-skills
 /plugin install molbio-skills
 ```
 
-That is the whole setup. You do not need to install Python packages. The
-first time a skill runs it checks for what it needs and installs it.
+Then install the Python packages once:
 
-## Use it
+```
+python3 -m pip install -r requirements.txt
+```
 
-Just ask. For example:
+The skills do not install anything themselves. If something is missing they print
+that exact line and stop, so the pinned versions are the versions you get.
 
-> Add Type 3 overhangs to the genes in `candidates.fasta` and put the
-> fragments in `out/`.
+## Scope: Type 3 only, and that is deliberate
 
-Or, from genes to finished maps:
+One part type is supported: **Type 3**, a whole coding sequence that starts with
+`ATG` and ends with a stop codon.
 
-> Take the genes in `candidates.fasta` and make me plasmid maps in `out/`.
+**The part type is never guessed from a sequence.** Type 3 versus 3a versus 3b is
+your design decision, not a property of the DNA. Nothing here will pick for you,
+because a wrong type puts the part in the wrong slot of an assembly and nothing
+downstream would notice.
 
-Or, for the whole job at once:
+## No tags on these parts
 
-> Run the full YTK job on `genes.csv` and check the results against my files
-> in `refs/`.
+Worth knowing before you build a freezer full of them.
 
-Always say the part type — type 3 for a coding sequence, for example. The
-tool never guesses it, because a wrong type puts the part in the wrong slot of
-an assembly and nothing downstream would notice.
+A part built here keeps the CDS's own stop codon, so:
+
+| You want | With these parts |
+|---|---|
+| the plain protein | **works** |
+| a C-terminal tag | **not possible** - translation stops before the tag |
+| an N-terminal tag | **not possible** - the part fills the whole Type 3 slot |
+
+The published Type 3 parts drop the stop codon and add `GG`, so a tag can be
+fused on later and the stop comes from the next part. This plugin does not do
+that, because it would mean editing your sequence.
+
+Nothing you have already made is wrong. For promoter + CDS + terminator these
+parts are correct. If you ever want tags, `NOTES.md` has the recipe, and it needs
+no sequence editing either - you just supply a CDS without a stop codon.
+
+## The seven skills
+
+Each one works on **one sequence or a batch**. Just ask.
+
+**`ytk-cds-qc`** - are these valid Type 3 coding sequences, and do any hide a
+BsmBI or BsaI site?
+
+> Check the genes in `candidates.fasta` before I order anything.
+
+**`ytk-add-overhangs`** - puts the YTK flanks on a sequence, so you can order the
+whole fragment from a synthesis company.
+
+> Add Type 3 overhangs to the genes in `candidates.fasta` and put the fragments
+> in `out/`.
+
+**`ytk-design-primers`** - PCR primers that carry the flanks, so the product
+amplified from cDNA is already YTK-compatible.
+
+> Design primers for the genes in `PiperGenes.csv`. I'm amplifying from cDNA.
+
+**`ytk-clone`** - cuts and joins a flanked fragment into a backbone and writes the
+map. This is what SnapGene's cloning simulation does.
+
+> Clone the fragments in `out/ytk_order.csv` into pYTK001 and give me the maps.
+
+> Clone these into `pRS416.gb` with BsaI instead.
+
+**`ytk-annotate-map`** - puts the part labels on a `.dna` file.
+
+> This plasmid map opens blank in SnapGene. Can you label it?
+
+**`ytk-verify-map`** - checks a `.dna` file, on its own or against a reference.
+
+> Check the maps in `out/maps/` against my hand-made ones in `refs/`.
+
+**`ytk-workflow`** - all six, in order.
+
+> Run the full YTK job on `genes.csv` and put everything in `out/`.
+
+## The real lab workflow
+
+1. Pick a coding sequence, or a batch of them.
+2. **Check for BsmBI and BsaI sites inside.** Those break Golden Gate.
+3. Design primers that carry the YTK flanks.
+4. PCR from cDNA.
+5. **If the PCR keeps failing**, order the flanked sequence from a synthesis
+   company instead. That is what `ytk-add-overhangs` gives you.
+6. Golden Gate into pYTK001 with BsmBI, and get a map.
+
+## The pad, and why two outputs differ
+
+At the outer end of every flank sit a few spare bases. They exist only so BsmBI
+has room to cut near the end of a linear fragment.
+
+- **`ytk-add-overhangs` keeps all 10.** That is the fragment you order.
+- **`ytk-design-primers` trims to 4.** Shorter primers cost less.
+
+**This is not a bug, and it changes nothing.** The pad sits *outside* both BsmBI
+sites, so it is cut off and thrown away. A fragment with a 10-base pad and a PCR
+product with a 4-base pad give the identical plasmid. There is a test for it.
+
+The pad never goes below 4, or BsmBI loses its footing.
 
 ## What you give it
 
-One file of genes. A CSV is best:
+Any of `.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`. A CSV is easiest:
 
 ```
 name,sequence,plasmid
 Pi_fim_NCS_c1,ATGATTCCT...,pTP412
-Pi_fim_NCS_c3,ATGGTTGCC...,pTP768
-Pi_fim_OMT_c1,ATGGTCTTA...,pTP002
+Pi_fim_NCS_c3,ATGGTTGCC...,pTP414
+Pi_fim_OMT_c1,ATGGTCTTA...,pTP0457
 ```
 
-- **name** — what the gene is called
-- **sequence** — the DNA
-- **plasmid** — what to call the finished plasmid. Optional.
+- **name** - what the gene is called
+- **sequence** - the DNA
+- **plasmid** - what to call the finished plasmid. Optional, and carried all the
+  way through, because real plasmid numbers jump about.
 
-The plasmid column exists because real plasmid numbers jump about. pTP412,
-pTP768 and pTP002 are fine side by side. The tool never makes up a number.
-
-Leave the plasmid column out, or leave a cell blank, and that plasmid is
-called `<gene>_<backbone>.dna` instead — for example
-`Pi_fim_NCS_c1_pYTK001.dna`. The vector goes in the name so the file still
-makes sense months later.
-
-A header row is optional. Capitals in the header do not matter.
-
-**FASTA** works too — `.fa` or `.fasta` — but a FASTA file has nowhere to put
-a plasmid name, so you always get `<gene>_<backbone>.dna`.
-
-Nothing else is accepted. If you hand it something else it says so rather
-than guessing.
-
-If two rows share a gene name, or share a plasmid name, it stops. Otherwise
-one file would quietly overwrite the other.
-
-Your sequences are never changed. If one looks wrong, the tool tells you and
-stops.
+For a `.gb` or `.dna` map, the insert is picked out for you: resistance markers
+and origins are set aside first, by matching against the published parts and a
+catalogue of common backbone features. If more than one candidate is left, it
+stops and lists them, and you say which.
 
 ## What you get back
 
-From the overhangs step, one file per gene:
+- `ytk_primers.csv` - two rows per gene, columns matching an oligo stock sheet
+- `ytk_order.csv` - the flanked sequences to order
+- `maps/` - one labelled circular `.dna` per plasmid
+- `fragments/` - one linear `.dna` per fragment
 
-- `<gene>_oh.dna` — the fragment to order, with the flanks on it
+**Your sequences are never changed.** Not to remove a cut site, not to fix a
+codon. If something needs changing you are told, and asked.
 
-Then, for each fragment, two more:
+## When it stops and asks
 
-- `<fragment>.dna` — the fragment on its own, linear
-- `<plasmid>.dna` — the finished circular plasmid, with labels
+Not a valid Type 3 CDS. A BsmBI or BsaI site inside the sequence. A primer that
+would have to be longer than 50 bp. Cloning that does not work.
 
-Open them in SnapGene as usual.
+**In a batch it never stops at the first problem.** Every skill collects the whole
+batch's problems, prints one table, and asks once.
 
-## The five skills
+## The data tables
 
-| Skill | What it does |
+| File | Holds |
 |---|---|
-| `ytk-add-overhangs` | Puts the YTK flanks on a gene, ready to order. |
-| `ytk-clone` | Builds the plasmid maps from flanked fragments. |
-| `ytk-annotate` | Puts the part labels on a map. |
-| `ytk-qc` | Checks a map, on its own or against a reference. |
-| `ytk-batch` | Runs all four in order. |
+| `data/ytk_parts.tsv` | all 96 published parts, with sequences and junctions |
+| `data/ytk_overhangs.tsv` | the adapter pair for each part type |
+| `data/ytk_part_types.tsv` | the part-type overhangs, from the paper |
+| `data/backbone_features.tsv` | markers and origins, so they are not mistaken for an insert |
 
-Each one works on its own. You can also ask for just one of them.
-
-`ytk-clone` takes the fragment as ordered, with the flanks already on it. Hand
-it a bare gene and it stops and sends you to `ytk-add-overhangs`. It will not
-add the flanks for you, because that would assume a fragment design you may
-never have ordered.
-
-## Two things worth knowing
-
-**Where the map starts.** A plasmid is a loop, so it has no natural first
-base. Every map this tool makes starts at the same point in the backbone.
-That means the gene is never cut in half by the start of the file, and the
-same gene always gives you the same map.
-
-**Comparing maps.** Because a plasmid is a loop, two files can hold exactly
-the same DNA while starting at different points. Compared as plain text they
-look different, but they are not. `ytk-qc` turns one until it lines up, and
-tells you `matches the reference, turned by N bp`. That is a pass, not a
-failure.
-
-**Genes with a cut site inside.** Some genes hold a BsmBI or BsaI site in the
-coding sequence. The tool handles it and leaves the gene alone. It flags
-those genes, because at the bench they cannot be re-cut with the same enzyme.
-
-**Stop codons.** A coding sequence has to bring its own stop codon. The flanks
-do not add one. If a gene has no stop codon the run stops, and you say
-`--no-stop-codon <name>` if that was on purpose.
-
-## The two tables
-
-`data/ytk_overhangs.tsv` holds the flanks for every part type, one row each.
-`ytk-add-overhangs` reads it. A row can also carry a note in the `unsure`
-column, and then that part type stops the run until someone approves it. When
-the overhangs are confirmed, clearing the cell turns the gate off.
-
-`data/ytk_parts.tsv` holds every toolkit part: its name, its type, its
-sequence and its two junctions. Both `ytk-clone` and `ytk-annotate` read it.
-
-It was built from the published toolkit files with
-`data/build_parts_table.py`. To rebuild it:
-
-```bash
-pip install pandas xlrd
-python3 data/build_parts_table.py ~/Downloads/ytk/plasmids
-```
-
-Labels always come from this table, never from another map file. Map files in
-circulation carry mistakes — one `pYTK001.dna` says the ColE1 origin covers
-the whole plasmid, when it is 764 bp.
+Every overhang was checked twice: against the paper, and against all 96 published
+plasmid maps in `reference/ytk_plasmids/` by finding their BsaI sites. Both agree
+with every row. `data/ytk_parts.tsv` is generated from those maps, and a test
+rebuilds it and compares byte for byte, so the table and the generator cannot
+drift apart.
 
 ## Source
 
-Lee ME, DeLoache WC, Cervantes B, Dueber JE.
-*A Highly Characterized Yeast Toolkit for Modular, Multipart Assembly.*
-ACS Synthetic Biology 2015, 4(9), 975–986.
+Lee MW, DeLoache WC, Cervantes B, Dueber JE (2015). *A Highly Characterized Yeast
+Toolkit for Modular, Multipart Assembly.* ACS Synthetic Biology 4(9), 975-986.
 [doi:10.1021/sb500366v](https://doi.org/10.1021/sb500366v)
 
-Plasmids: Addgene kit #1000000061.
+Plasmids: Addgene kit #1000000061, all 96 committed in `reference/ytk_plasmids/`.
+The two paper PDFs are not committed - 9 MB, and the 1 KB the code needs is in
+`data/ytk_part_types.tsv`.
 
 ## Tests
 
-```bash
-python3 tests/test_ytk.py
+```
+python3 tests/test_ytk.py       # cloning, writing .dna, annotation
+python3 tests/test_primers.py   # the primer designer, vs 20 real primer pairs
+python3 tests/test_parts.py     # the data tables and the entry vector
+python3 tests/test_inputs.py    # the four formats, and asking once
 ```
 
-The reference `.dna` files in `tests/data/` were made by hand in SnapGene.
-The five cases each cover something different: a map that starts elsewhere on
-the circle, a gene with a BsmBI site inside it, a gene with a BsaI site
-inside it, a long insert, and the linear writer.
+`tests/test_primers.py` measures against a real oligo sheet and gene list. Those
+hold unpublished sequences, so they are not in the repo: the tests that need them
+skip, loudly, when they are not on your machine.
 
-The genes in `tests/data/` are bare, and the tests flank them with
-`ytk-add-overhangs` before cloning. So the two skills are tested together, and
-the finished maps still have to match the files made by hand.
+`NOTES.md` has the things that would cost you a day to rediscover.
 
 ## Licence
 

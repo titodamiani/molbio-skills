@@ -269,16 +269,21 @@ def main():
                      f"Nothing was written. Your sequence was not changed.\n"
                      f"Send this fragment to whoever maintains the plugin.")
 
+    # Two folders, because plasmid names come from the input and cannot be
+    # matched by a pattern. A later step can just take maps/*.dna.
     outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    fragments = outdir / "fragments"
+    maps = outdir / "maps"
+    for folder in (fragments, maps):
+        folder.mkdir(parents=True, exist_ok=True)
 
     width = max(len(p) for _, _, p, _ in built) + 2
     print(f"{'fragment':24s} {'plasmid':{width}s} {'frag bp':>8s} "
           f"{'plasmid bp':>11s}  internal site")
     for name, gene, plasmid_name, plasmid in built:
-        sg.write_dna(outdir / f"{name}.dna", gene, circular=False,
+        sg.write_dna(fragments / f"{name}.dna", gene, circular=False,
                      notes_type="Natural")
-        sg.write_dna(outdir / f"{plasmid_name}.dna", plasmid, circular=True,
+        sg.write_dna(maps / f"{plasmid_name}.dna", plasmid, circular=True,
                      notes_type="Synthetic", description="synthetic circular DNA.")
 
         print(f"{name:24s} {plasmid_name:{width}s} {len(gene):>8d} {len(plasmid):>11d}"
@@ -293,7 +298,8 @@ def main():
         print("Worth knowing at the bench: those parts cannot be re-cut with "
               "the same enzyme later.")
 
-    print(f"\nwrote {2 * len(genes)} files to {outdir}")
+    print(f"\nwrote {len(genes)} maps to {maps} "
+          f"and {len(genes)} fragments to {fragments}")
 
 
 if __name__ == "__main__":

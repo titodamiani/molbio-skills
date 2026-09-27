@@ -1,5 +1,5 @@
 ---
-name: ytk-annotate
+name: ytk-annotate-map
 description: Put labels on SnapGene .dna plasmid maps using the published MoClo Yeast Toolkit (YTK) parts table. Finds ColE1, CamR, the CamR promoter and terminator, any YTK part, and the cloned gene, then writes the features back into the file. Use this whenever someone wants features, labels or annotations added to a plasmid map, says a .dna file looks blank or empty in SnapGene, says the features are missing or wrong, or asks what is actually in a plasmid map.
 ---
 
@@ -11,16 +11,16 @@ the file back with those parts labelled.
 ## Run it
 
 ```bash
-python3 scripts/annotate.py FILE.dna
+python3 scripts/annotate_map.py FILE.dna
 ```
 
 Several files at once, and with the cloned genes labelled too:
 
 ```bash
-python3 scripts/annotate.py OUTDIR/*.dna --genes GENES
+python3 scripts/annotate_map.py OUTDIR/*.dna --genes GENES
 ```
 
-`scripts/annotate.py` sits in this skill's own folder. It finds the shared
+`scripts/annotate_map.py` sits in this skill's own folder. It finds the shared
 parts table by itself, so it works wherever the plugin is installed.
 
 `--genes` takes the same FASTA or CSV file used to build the plasmids. Each

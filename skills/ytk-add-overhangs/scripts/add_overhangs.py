@@ -126,32 +126,32 @@ def main():
 
     if args.input:
         try:
-            parts = [(name, seq.upper())
-                     for name, seq, _ in sequences.read(Path(args.input), args.feature)]
+            parts = [(name, seq.upper(), plasmid) for name, seq, plasmid
+                     in sequences.read(Path(args.input), args.feature)]
         except sequences.AmbiguousCDS as ambiguous:
             sys.exit(f"{ambiguous}\n\n{ambiguous.table()}\n\n"
                      "Say which one with --feature NAME.")
     elif args.name:
-        parts = [(args.name, args.sequence.upper())]
+        parts = [(args.name, args.sequence.upper(), None)]
     else:
         sys.exit("--name is needed, so the output file can be named after the sequence")
 
     # A typo here would otherwise fail with a message telling the person to
     # pass a flag they did pass.
-    unknown = set(args.no_stop_codon) - {name for name, _ in parts}
+    unknown = set(args.no_stop_codon) - {name for name, _, _ in parts}
     if unknown:
         sys.exit(f"--no-stop-codon names a sequence that is not in the input: "
                  f"{', '.join(sorted(unknown))}")
 
     rows = []
-    for name, sequence in parts:
+    for name, sequence, plasmid in parts:
         warnings = check(name, sequence, adapters, name in args.no_stop_codon)
-        rows.append((name, sequence, flank(sequence, adapters), warnings))
+        rows.append((name, sequence, flank(sequence, adapters), warnings, plasmid))
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    for name, sequence, ordered, warnings in rows:
+    for name, sequence, ordered, warnings, _ in rows:
         print(f"\n{name}  type {args.type}  {len(sequence)} bp in, {len(ordered)} bp to order")
         print(ordered)
         for warning in warnings:
@@ -170,12 +170,14 @@ def main():
         path = outdir / "ytk_order.csv"
         with open(path, "w", newline="") as fh:
             writer = csv.writer(fh)
-            writer.writerow(["name", "part_type", "length", "sequence", "notes"])
-            for name, _, ordered, warnings in rows:
-                # The plain name, not <name>_oh: ytk-clone reads this column
-                # and names its plasmid files from it.
-                writer.writerow([name, args.type, len(ordered), ordered,
-                                 "; ".join(warnings)])
+            writer.writerow(["name", "plasmid", "part_type", "length",
+                             "sequence", "notes"])
+            for name, _, ordered, warnings, plasmid in rows:
+                # The plain name, not <name>_oh: ytk-clone reads this column and
+                # names its files from it. The plasmid column is carried through
+                # so the numbers from the input survive into the maps.
+                writer.writerow([name, plasmid or "", args.type, len(ordered),
+                                 ordered, "; ".join(warnings)])
         print(f"\nwrote {path}")
 
     if adapters["note"]:

@@ -1,6 +1,6 @@
 ---
 name: ytk-clone
-description: Build SnapGene .dna plasmid maps from flanked YTK fragments using the MoClo Yeast Toolkit (YTK). Reads a FASTA or CSV file of fragments that already carry the YTK overhangs, cuts and joins each one into the pYTK001 entry vector, and writes one .dna file per fragment and one per finished plasmid. Use this whenever someone has ordered or designed YTK fragments and wants plasmid maps, SnapGene files, Golden Gate assembly, YTK Type 3 part plasmids, or entry vector cloning - including when they only say something like "turn these into plasmids", "make maps for this batch", or "clone these into the toolkit vector". For bare genes with no overhangs yet, use ytk-add-overhangs first.
+description: Simulate Golden Gate cloning and write the map of the finished construct, the way SnapGene's cloning simulation does. Cuts flanked fragments and a backbone with a Type IIS enzyme, checks the sticky ends match, joins them, and writes one SnapGene .dna file per plasmid. Defaults to the MoClo Yeast Toolkit entry reaction - pYTK001 with BsmBI - and takes any other backbone and any Type IIS enzyme. Use this whenever someone has flanked fragments and wants plasmid maps, SnapGene files, Golden Gate or Gibson-style assembly simulated, YTK Type 3 part plasmids, entry vector cloning, or asks whether a cloning will work - including when they only say "turn these into plasmids", "make maps for this batch", or "clone these into the vector". For bare genes with no overhangs yet, use ytk-add-overhangs first.
 ---
 
 # Build YTK part plasmids
@@ -22,9 +22,33 @@ For each fragment it writes two files:
 python3 scripts/clone.py --input FRAGMENTS --outdir OUTDIR
 ```
 
-`scripts/clone.py` sits in this skill's own folder. The script finds the
-shared code and the parts table by itself, so it works wherever the plugin is
+That clones into pYTK001 with BsmBI, which is the YTK entry reaction.
+
+Any other vector, any other Type IIS enzyme:
+
+```bash
+python3 scripts/clone.py --input FRAGMENTS --outdir OUTDIR \
+    --backbone my_vector.gb --enzyme BsaI
+```
+
+`--backbone` takes `.dna`, `.gb`, `.gbk` or FASTA. `--enzyme` takes any name
+Biopython knows. Away from the default pair, the Type 3 junction check is
+skipped, because `TATG`/`ATCC` only means something for the entry reaction. The
+overhangs are still checked: pydna refuses to join ends that do not match.
+
+`scripts/clone.py` sits in this skill's own folder. The script finds the shared
+code and the parts table by itself, so it works wherever the plugin is
 installed.
+
+## What comes out
+
+Two folders, because plasmid names come from the input and cannot be matched by
+a pattern:
+
+- `OUTDIR/maps/` - one labelled-ready circular `.dna` per plasmid
+- `OUTDIR/fragments/` - one linear `.dna` per fragment
+
+So the next step can just take `OUTDIR/maps/*.dna`.
 
 ## Input
 
@@ -137,7 +161,7 @@ the same enzyme later.
 ## Where the map starts
 
 A circle has no natural first base, so the file has to pick one. The script
-always starts the map at base 1 of the backbone.
+starts the map at base 1 of the backbone.
 
 Two things follow from that, and both matter:
 
@@ -146,8 +170,13 @@ Two things follow from that, and both matter:
   is fine.
 - The same gene always gives the same map, so two people get the same file.
 
+One catch with a backbone read straight from a kit: its base 1 can sit inside the
+piece that drops out, and then it is not in the finished plasmid at all. When
+that happens the map starts at the first base of the piece that was kept. The
+plasmid is the same either way, just numbered from a different point.
+
 ## After this
 
-The maps have no labels yet. Use the **ytk-annotate** skill to label the
-parts, then the **ytk-qc** skill to check the results. The **ytk-batch** skill
-does all three in order.
+The maps have no labels yet. Use **ytk-annotate-map** to label the parts, then
+**ytk-verify-map** to check the results. **ytk-workflow** does the whole job in
+order.
