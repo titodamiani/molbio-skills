@@ -12,8 +12,10 @@ DATA = ROOT / "tests" / "data"
 PLASMIDS = ROOT / "reference" / "ytk_plasmids"
 sys.path.insert(0, str(ROOT / "lib"))
 import cds          # noqa: E402
+import enzymes      # noqa: E402
 import report       # noqa: E402
 import sequences    # noqa: E402
+import silent       # noqa: E402
 
 
 class TestTheFourFormats(unittest.TestCase):
@@ -99,6 +101,73 @@ class TestTheCodingSequenceCheck(unittest.TestCase):
     def test_a_cut_site_is_a_warning(self):
         warnings = cds.warnings("ATG" + "CGTCTC" + "AAATAA")
         self.assertTrue(any("BsmBI" in w for w in warnings))
+
+
+class TestRemovingACutSiteSilently(unittest.TestCase):
+    """The only code here that changes a sequence. It runs only when asked for
+    by name, and it has to prove the protein is untouched."""
+
+    def setUp(self):
+        self.genes = {name: seq for name, seq, _
+                      in sequences.read(DATA / "genes.fasta")}
+
+    def test_the_two_real_genes_with_sites_are_fixed(self):
+        for name, enzyme in (("Pi_fim_NCS_c1", "BsmBI"),
+                             ("Pi_fim_NCS_c3", "BsaI")):
+            with self.subTest(name=name):
+                gene = self.genes[name]
+                self.assertEqual(enzymes.count(gene, enzyme), 1)
+                fixed, changes, left = silent.remove_sites(gene)
+                self.assertEqual(enzymes.count(fixed, enzyme), 0)
+                self.assertEqual(left, [])
+                self.assertEqual(len(changes), 1)
+
+    def test_the_protein_is_identical(self):
+        for name in ("Pi_fim_NCS_c1", "Pi_fim_NCS_c3"):
+            with self.subTest(name=name):
+                gene = self.genes[name]
+                fixed, _, _ = silent.remove_sites(gene)
+                self.assertEqual(silent.protein(fixed), silent.protein(gene))
+
+    def test_the_length_never_changes(self):
+        for name, gene in self.genes.items():
+            with self.subTest(name=name):
+                fixed, _, _ = silent.remove_sites(gene)
+                self.assertEqual(len(fixed), len(gene))
+
+    def test_a_clean_gene_is_left_completely_alone(self):
+        for name in ("Pi_fim_NCS_c5", "Pi_fim_OMT_c1"):
+            with self.subTest(name=name):
+                gene = self.genes[name]
+                fixed, changes, _ = silent.remove_sites(gene)
+                self.assertEqual(fixed, gene)
+                self.assertEqual(changes, [])
+
+    def test_every_reported_change_is_real_and_in_the_right_place(self):
+        gene = self.genes["Pi_fim_NCS_c1"]
+        fixed, changes, _ = silent.remove_sites(gene)
+        moved = [i for i, (a, b) in enumerate(zip(gene, fixed)) if a != b]
+        self.assertEqual([c["position"] - 1 for c in changes], moved)
+        for change in changes:
+            at = change["position"] - 1
+            self.assertEqual(gene[at], change["was"])
+            self.assertEqual(fixed[at], change["now"])
+
+    def test_it_refuses_a_sequence_that_is_not_a_type_3_cds(self):
+        with self.assertRaises(ValueError):
+            silent.remove_sites("CCCAAATTT")
+
+    def test_a_stop_codon_is_never_swapped(self):
+        # TAA and TAG both stop, so a naive synonym swap would touch them.
+        gene = "ATG" + "CGTCTC" + "AAATAA"
+        fixed, _, _ = silent.remove_sites(gene)
+        self.assertEqual(fixed[-3:], "TAA")
+
+    def test_the_start_codon_is_never_swapped(self):
+        for name, gene in self.genes.items():
+            with self.subTest(name=name):
+                fixed, _, _ = silent.remove_sites(gene)
+                self.assertTrue(fixed.startswith("ATG"))
 
 
 class TestAskingOnceForAWholeBatch(unittest.TestCase):

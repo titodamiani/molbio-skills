@@ -23,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "lib"))
+import sequences  # noqa: E402
 import snapgene as sg
 
 PARTS_TABLE = ROOT / "data" / "ytk_parts.tsv"
@@ -89,7 +90,7 @@ def main():
     args = ap.parse_args()
 
     parts = load_parts()
-    genes = [(n, s) for n, s, _ in sg.read_genes(args.genes)] if args.genes else []
+    genes = [(n, s) for n, s, _ in sequences.read(args.genes)] if args.genes else []
 
     for path in args.plasmids:
         record = sg.read_dna(path)

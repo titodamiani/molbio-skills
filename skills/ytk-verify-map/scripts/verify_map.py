@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "lib"))
+import sequences  # noqa: E402
 import snapgene as sg
 
 STOP_CODONS = ("TAA", "TAG", "TGA")
@@ -83,7 +84,7 @@ def main():
     if args.reference and len(args.files) > 1:
         sys.exit("--reference works with one file at a time")
 
-    genes = [(n, s) for n, s, _ in sg.read_genes(args.genes)] if args.genes else []
+    genes = [(n, s) for n, s, _ in sequences.read(args.genes)] if args.genes else []
     failed = 0
 
     for path in args.files:

@@ -66,6 +66,9 @@ BsmBI or BsaI site?
 
 > Check the genes in `candidates.fasta` before I order anything.
 
+> That gene has a BsmBI site. Remove it with a silent codon change and show me
+> what you changed.
+
 **`ytk-add-overhangs`** - puts the YTK flanks on a sequence, so you can order the
 whole fragment from a synthesis company.
 
@@ -148,8 +151,11 @@ stops and lists them, and you say which.
 - `maps/` - one labelled circular `.dna` per plasmid
 - `fragments/` - one linear `.dna` per fragment
 
-**Your sequences are never changed.** Not to remove a cut site, not to fix a
-codon. If something needs changing you are told, and asked.
+**Your sequences are never changed unless you ask.** There is one exception, and
+you have to name it: `ytk-cds-qc --remove-sites` swaps a codon to remove an
+internal BsmBI or BsaI site. It writes a new file, leaves yours alone, prints
+every changed base, and refuses if the protein would differ by one residue. On
+real genes it needs one base.
 
 ## When it stops and asks
 

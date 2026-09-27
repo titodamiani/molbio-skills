@@ -234,8 +234,13 @@ def has_internal_site(fragment):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--input", required=True,
-                    help="file of flanked fragments (.fa, .fasta, .csv)")
+    ap.add_argument("--input", nargs="*", default=[],
+                    help="files of flanked fragments (.fa, .fasta, .csv, .gb, "
+                         ".gbk, .dna)")
+    ap.add_argument("--fragment", help="one flanked fragment, on the command line")
+    ap.add_argument("--name", help="what to call a --fragment")
+    ap.add_argument("--plasmid", help="what to call the plasmid from a --fragment")
+    ap.add_argument("--feature", help="which feature holds the fragment, for map files")
     ap.add_argument("--outdir", required=True, help="where to write the .dna files")
     ap.add_argument("--backbone", default=None,
                     help=f"vector to clone into (.dna, .gb, .gbk, FASTA); "
@@ -244,7 +249,21 @@ def main():
                     help="Type IIS enzyme to cut with (default BsmBI)")
     args = ap.parse_args()
 
-    genes = sg.read_genes(args.input)
+    if not args.input and not args.fragment:
+        ap.error("give --input or --fragment")
+    if args.fragment and not args.name:
+        ap.error("--fragment needs --name, so the files can be named after it")
+
+    if args.fragment:
+        genes = [(args.name, args.fragment.upper(), args.plasmid)]
+    else:
+        genes = []
+        for path in args.input:
+            try:
+                genes += sequences.read(path, args.feature)
+            except sequences.AmbiguousCDS as ambiguous:
+                sys.exit(f"{ambiguous}\n\n{ambiguous.table()}\n\n"
+                         "Say which one with --feature NAME.")
     enzyme = named_enzyme(args.enzyme)
     backbone_name, backbone = load_backbone(args.backbone)
     # The Type 3 junction check only means something for the YTK entry reaction.

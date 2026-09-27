@@ -90,6 +90,27 @@ the sequence rather than trust these cells.
 what primer3 computes. Their Tm was probably read off the mis-parsed region. The
 offset in `lib/primers.py` was fitted without those four rows.
 
+## Removing a cut site: one base is usually enough
+
+`lib/silent.py` swaps a codon for a synonym to remove an internal BsmBI or BsaI
+site. It is the only code here that changes a sequence, and only
+`ytk-cds-qc --remove-sites` calls it.
+
+On both real genes in `tests/data/` it needs **one base**, at the third position
+of a codon: `GAG -> GAA` at base 339 of Pi_fim_NCS_c1, and `GGT -> GGA` at base
+411 of Pi_fim_NCS_c3. That is the usual case, because the genetic code is
+redundant at the third base.
+
+Two things it will not do, both deliberate:
+
+- **It never touches the start or stop codon.** `TAA` and `TAG` both stop, so a
+  naive synonym swap would happily change one for the other.
+- **It requires each swap to reduce the total site count**, so a change cannot
+  remove one site and create another somewhere else.
+
+If no synonym removes a site, it says so rather than returning a sequence that
+still holds one.
+
 ## Two published plasmids are cloned backwards
 
 In **pYTK047** (the 234r GFP dropout) and **pYTK096** (the pre-assembled URA3
