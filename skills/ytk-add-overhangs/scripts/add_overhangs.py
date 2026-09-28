@@ -95,7 +95,7 @@ def write_labelled_map(path, name, sequence, ordered, adapters):
         "wrap_end": 0,
     }
     sg.write_map(path, ordered, circular=False, notes_type="Synthetic",
-                 description=f"YTK type {adapters['part_type']} part, ready to order.",
+                 description=f"YTK type {adapters['part_type']} part, ready to order",
                  features=[feature])
 
 

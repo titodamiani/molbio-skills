@@ -97,7 +97,7 @@ def main():
         features = build_features(record["sequence"], parts, genes)
         sg.write_map(path, record["sequence"], circular=record["circular"],
                      notes_type="Synthetic" if record["circular"] else "Natural",
-                     description="synthetic circular DNA." if record["circular"] else "",
+                     description="synthetic circular DNA" if record["circular"] else "",
                      features=features)
         names = ", ".join(f["name"] for f in features)
         print(f"{Path(path).name}: {len(features)} labels -- {names}")

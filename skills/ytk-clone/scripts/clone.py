@@ -301,7 +301,7 @@ def main():
         sg.write_map(fragments / f"{name}{suffix}", gene, circular=False,
                      notes_type="Natural")
         sg.write_map(maps / f"{plasmid_name}{suffix}", plasmid, circular=True,
-                     notes_type="Synthetic", description="synthetic circular DNA.")
+                     notes_type="Synthetic", description="synthetic circular DNA")
 
         print(f"{name:24s} {plasmid_name:{width}s} {len(gene):>8d} {len(plasmid):>11d}"
               f"  {'yes' if has_internal_site(gene) else 'no'}")
