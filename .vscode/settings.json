@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "/Users/tdamiani/miniforge3/bin/python3",
+  "python.testing.unittestEnabled": true,
+  "python.testing.unittestArgs": ["-v", "-s", "tests", "-p", "test_*.py"],
+  "python.analysis.extraPaths": ["lib"]
+}

@@ -1,0 +1,7 @@
+# Only needed to rebuild data/ytk_parts.tsv from the published toolkit files.
+# Not needed to run any skill.
+#
+#     python3 -m pip install -r requirements-dev.txt
+
+pandas==3.0.5
+xlrd==2.0.2

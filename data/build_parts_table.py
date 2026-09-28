@@ -10,15 +10,18 @@ Two inputs, both from that kit:
     pYTK*.gb        one GenBank file per plasmid, gives the sequences
     YTK_Parts.xls   the parts list, gives the clean names and part types
 
-Run it like this:
-    python3 data/build_parts_table.py ~/Downloads/ytk/plasmids
+Both live in reference/ytk_plasmids/, so this needs no arguments:
+    python3 data/build_parts_table.py
+
+Pass a directory to read them from somewhere else.
 
 It writes data/ytk_parts.tsv next to this script.
 
 Each pYTK plasmid carries one part between two BsaI sites. Cutting with BsaI
-gives two pieces: the entry vector (it holds ColE1) and the part. The part is
-the piece without ColE1 -- two parts are longer than the vector, so picking by
-size would be wrong.
+gives two pieces: the storage backbone and the part. The backbone is the piece
+holding CamR, which no part carries -- two parts are longer than the backbone,
+so picking by size would be wrong. Eight plasmids in the kit have no CamR at
+all (see cut_out_part).
 
 The table also holds four rows for the entry vector's own features
 (ColE1, CamR, CamR Promoter, CamR Terminator) taken from pYTK001.gb. Those
@@ -34,6 +37,7 @@ from pydna.dseqrecord import Dseqrecord
 import pandas as pd
 
 OUT = Path(__file__).resolve().parent / "ytk_parts.tsv"
+PLASMIDS = Path(__file__).resolve().parents[1] / "reference" / "ytk_plasmids"
 
 COLUMNS = ["name", "part_type", "feature_type", "strand",
            "junction_5", "junction_3", "sequence"]
@@ -72,12 +76,26 @@ def revcomp(seq):
     return str(Seq(seq).reverse_complement()).upper()
 
 
-def cut_out_part(plasmid_seq, cole1):
-    """Return (part sequence, 5' junction, 3' junction) for one pYTK plasmid."""
+def cut_out_part(plasmid_seq, cole1, camr):
+    """Return (part sequence, 5' junction, 3' junction) for one pYTK plasmid.
+
+    The part is the piece that does not hold CamR, the storage backbone's own
+    marker. The type 8, 8a, 678 and cassette plasmids are kept on Amp, Kan or
+    Spec instead and have no CamR anywhere: there the part itself is the
+    bacterial origin plus marker, so it is the piece that holds ColE1.
+
+    Neither landmark can be dropped. The GFP dropout is a part in pYTK047 and
+    the leftover backbone in pYTK096, so looking at one piece alone can never
+    tell the two apart -- what settles it is whether the plasmid has CamR.
+    """
     frags = Dseqrecord(plasmid_seq, circular=True).cut(BsaI)
     if not frags:
         return None
-    part = [f for f in frags if cole1 not in str(f.seq).upper()][0]
+    no_camr = [f for f in frags if camr not in str(f.seq).upper()]
+    if len(no_camr) == 1:
+        part = no_camr[0]
+    else:
+        part = [f for f in frags if cole1 in str(f.seq).upper()][0]
     j5 = part.seq.five_prime_end()[1].upper()
     j3 = revcomp(part.seq.three_prime_end()[1])
     return str(part.seq).upper(), j5, j3
@@ -89,9 +107,14 @@ def main(ytk_dir):
 
     entry = SeqIO.read(ytk_dir / "pYTK001.gb", "genbank")
     entry_seq = str(entry.seq).upper()
-    cole1 = [entry_seq[int(f.location.start):int(f.location.end)]
-             for f in entry.features
-             if f.qualifiers.get("label", [""])[0] == "ColE1"][0]
+
+    def landmark(label):
+        f = [f for f in entry.features
+             if f.qualifiers.get("label", [""])[0] == label][0]
+        return entry_seq[int(f.location.start):int(f.location.end)]
+
+    cole1 = landmark("ColE1")
+    camr = landmark("CamR")
 
     rows = []
 
@@ -128,7 +151,8 @@ def main(ytk_dir):
         if not gb.exists():
             print(f"skipped {plasmid}: no GenBank file", file=sys.stderr)
             continue
-        cut = cut_out_part(str(SeqIO.read(gb, "genbank").seq).upper(), cole1)
+        cut = cut_out_part(str(SeqIO.read(gb, "genbank").seq).upper(),
+                           cole1, camr)
         if cut is None:
             continue  # pYTK001 has no BsaI site; it is already in the table
         seq, j5, j3 = cut
@@ -147,4 +171,4 @@ def main(ytk_dir):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "~/Downloads/ytk/plasmids")
+    main(sys.argv[1] if len(sys.argv) > 1 else PLASMIDS)

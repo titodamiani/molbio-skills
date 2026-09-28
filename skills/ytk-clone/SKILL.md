@@ -1,26 +1,54 @@
 ---
 name: ytk-clone
-description: Build SnapGene .dna plasmid maps from gene sequences using the MoClo Yeast Toolkit (YTK). Reads a FASTA or CSV file of genes, cuts and joins each one into the pYTK001 entry vector, and writes one .dna file per gene and one per finished plasmid. Use this whenever someone has gene sequences and wants plasmid maps, SnapGene files, Golden Gate assembly, YTK Type 3 part plasmids, or entry vector cloning - including when they only say something like "turn these genes into plasmids", "make maps for this batch", or "clone these into the toolkit vector".
+description: Simulate Golden Gate cloning and write the map of the finished construct, the way SnapGene's cloning simulation does. Cuts flanked fragments and a backbone with a Type IIS enzyme, checks the sticky ends match, joins them, and writes one SnapGene .dna file per plasmid. Defaults to the MoClo Yeast Toolkit entry reaction - pYTK001 with BsmBI - and takes any other backbone and any Type IIS enzyme. Use this whenever someone has flanked fragments and wants plasmid maps, SnapGene files, Golden Gate or Gibson-style assembly simulated, YTK Type 3 part plasmids, entry vector cloning, or asks whether a cloning will work - including when they only say "turn these into plasmids", "make maps for this batch", or "clone these into the vector". For bare genes with no overhangs yet, use ytk-add-overhangs first.
 ---
 
 # Build YTK part plasmids
 
-This skill turns a list of genes into SnapGene plasmid maps.
+This skill turns flanked fragments into SnapGene plasmid maps.
 
-For each gene it writes two files:
+The input is the fragment as ordered from a synthesis company, with the YTK
+flanks already on it. A bare gene is refused. Use **ytk-add-overhangs** to
+design the fragment first.
 
-- `<gene>.dna` — the gene on its own, linear
+For each fragment it writes two files:
+
+- `<fragment>.dna` — the fragment on its own, linear
 - `<plasmid>.dna` — the finished circular plasmid
 
 ## Run it
 
 ```bash
-python3 scripts/clone.py --input GENES --outdir OUTDIR
+python3 scripts/clone.py --input FRAGMENTS --outdir OUTDIR
 ```
 
-`scripts/clone.py` sits in this skill's own folder. The script finds the
-shared code and the parts table by itself, so it works wherever the plugin is
+That clones into pYTK001 with BsmBI, which is the YTK entry reaction.
+
+Any other vector, any other Type IIS enzyme:
+
+```bash
+python3 scripts/clone.py --input FRAGMENTS --outdir OUTDIR \
+    --backbone my_vector.gb --enzyme BsaI
+```
+
+`--backbone` takes `.dna`, `.gb`, `.gbk` or FASTA. `--enzyme` takes any name
+Biopython knows. Away from the default pair, the Type 3 junction check is
+skipped, because `TATG`/`ATCC` only means something for the entry reaction. The
+overhangs are still checked: pydna refuses to join ends that do not match.
+
+`scripts/clone.py` sits in this skill's own folder. The script finds the shared
+code and the parts table by itself, so it works wherever the plugin is
 installed.
+
+## What comes out
+
+Two folders, because plasmid names come from the input and cannot be matched by
+a pattern:
+
+- `OUTDIR/maps/` - one labelled-ready circular `.dna` per plasmid
+- `OUTDIR/fragments/` - one linear `.dna` per fragment
+
+So the next step can just take `OUTDIR/maps/*.dna`.
 
 ## Input
 
@@ -36,10 +64,13 @@ called `plasmid`, `plasmid_name` or `construct`.
 
 ```
 name,sequence,plasmid
-Pi_fim_NCS_c1,ATGATTCCT...,pTP412
-Pi_fim_NCS_c3,ATGGTTGCC...,pTP768
-Pi_fim_OMT_c1,ATGGTCTTA...,pTP002
+Pi_fim_NCS_c1,actcgacaacCGTCTCatcGGTCTCaTATGATTCCT...gttgtggtgt,pTP412
+Pi_fim_NCS_c3,actcgacaacCGTCTCatcGGTCTCaTATGGTTGCC...gttgtggtgt,pTP768
+Pi_fim_OMT_c1,actcgacaacCGTCTCatcGGTCTCaTATGGTCTTA...gttgtggtgt,pTP002
 ```
+
+The sequence column holds the flanked fragment, not the bare gene. The names
+stay the gene names, because the map is labelled and filed under those.
 
 Anything else is refused with a message saying so. If you are handed a
 GenBank file, an Excel sheet or a Word document, do not convert it quietly.
@@ -72,8 +103,8 @@ Treat every input sequence as read-only.
 The script enforces this itself, in three places:
 
 1. It stops if a sequence holds anything other than A, C, G and T.
-2. After building each plasmid it checks that the gene is in there exactly as
-   it was given. If it is not, the run stops.
+2. It checks the piece it cut out is in the fragment exactly as given, and
+   then that it is in the finished plasmid. If either fails, the run stops.
 3. It builds every plasmid before writing anything, so a failure leaves no
    files at all rather than half a batch.
 
@@ -90,14 +121,30 @@ gets to decide.
 
 ## What the script does
 
-1. Puts the standard flanks around the gene. They carry the BsmBI sites that
-   cut the part out and the BsaI sites for a later assembly.
-2. Cuts with BsmBI and keeps the piece between the two designed cuts.
+1. Cuts the fragment with BsmBI and keeps the piece between the two designed
+   cuts.
+2. Checks that piece is a Type 3 part. See below.
 3. Cuts the pYTK001 entry vector with BsmBI and keeps the larger piece.
 4. Joins the two and closes the loop.
 5. Turns the loop so it starts at base 1 of the backbone.
 
-## Genes with an internal cut site
+## What it refuses
+
+**No pair of BsmBI sites.** The fragment looks like a bare gene. The script
+says so and stops. It does not add the flanks for you, even if the person
+says to go ahead — that would assume a fragment design they may never have
+ordered. Send them to **ytk-add-overhangs** instead.
+
+**The wrong part type.** The script reads the part's own overhangs and
+compares them with the Type 3 pair, `TATG` and `ATCC`, taken from
+`data/ytk_parts.tsv`. Anything else does not belong in this entry vector, so
+the run stops and reports the overhangs it found.
+
+Those overhangs come from the inner BsaI sites, not the outer BsmBI ones. The
+BsmBI cut gives the same ends on every part type, because those ends are what
+fits the entry vector.
+
+## Fragments with an internal cut site
 
 Some genes hold a BsmBI or BsaI site inside the coding sequence. Cutting then
 gives extra pieces in the middle. The script joins those pieces back together,
@@ -114,7 +161,7 @@ the same enzyme later.
 ## Where the map starts
 
 A circle has no natural first base, so the file has to pick one. The script
-always starts the map at base 1 of the backbone.
+starts the map at base 1 of the backbone.
 
 Two things follow from that, and both matter:
 
@@ -123,8 +170,13 @@ Two things follow from that, and both matter:
   is fine.
 - The same gene always gives the same map, so two people get the same file.
 
+One catch with a backbone read straight from a kit: its base 1 can sit inside the
+piece that drops out, and then it is not in the finished plasmid at all. When
+that happens the map starts at the first base of the piece that was kept. The
+plasmid is the same either way, just numbered from a different point.
+
 ## After this
 
-The maps have no labels yet. Use the **ytk-annotate** skill to label the
-parts, then the **ytk-qc** skill to check the results. The **ytk-batch** skill
-does all three in order.
+The maps have no labels yet. Use **ytk-annotate-map** to label the parts, then
+**ytk-verify-map** to check the results. **ytk-workflow** does the whole job in
+order.

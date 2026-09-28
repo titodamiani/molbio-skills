@@ -1,8 +1,8 @@
-# The skills install these by themselves the first time they run.
-# Listed here so the versions are on record and the repo can be set up by hand.
-biopython
-pydna
+# Pinned on purpose. The skills do not install these for you: they print this
+# exact command and stop, so the versions you get are the versions on record.
+#
+#     python3 -m pip install -r requirements.txt
 
-# Only needed to rebuild data/ytk_parts.tsv from the published toolkit files.
-# pandas
-# xlrd
+biopython==1.88
+primer3-py==2.3.1
+pydna==5.5.16

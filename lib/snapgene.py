@@ -23,23 +23,23 @@ Nothing here imports a third-party package, so it always works.
 import csv
 import datetime
 import struct
-import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import deps
 
 CIRCULAR = 0x01
 DOUBLE_STRANDED = 0x02
 
 
 def require(package, module=None):
-    """Import a package, installing it with pip the first time if it is absent."""
-    module = module or package
-    try:
-        __import__(module)
-    except ImportError:
-        print(f"installing {package} ...", file=sys.stderr)
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-        __import__(module)
+    """Stop with the pip command when a package is missing.
+
+    Nothing is installed here, because pip would fetch the newest release
+    rather than the version pinned in requirements.txt.
+    """
+    deps.require(module or package)
 
 
 # --- reading the gene file ---------------------------------------------
