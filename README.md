@@ -5,7 +5,7 @@ Does the MoClo Yeast Toolkit cloning work you would otherwise do by hand.
 It works on one coding sequence or on a batch of them. It checks that each one is
 a valid Type 3 coding sequence and has no internal BsmBI or BsaI site, designs the
 PCR primers, simulates cloning the flanked sequence into a backbone, and writes
-labelled plasmid maps, as SnapGene `.dna` or GenBank.
+labelled plasmid maps, as GenBank or SnapGene `.dna`.
 
 ## Install
 
@@ -55,6 +55,24 @@ Nothing you have already made is wrong. For promoter + CDS + terminator these
 parts are correct. If you ever want tags, `NOTES.md` has the recipe, and it needs
 no sequence editing either - you just supply a CDS without a stop codon.
 
+## The prompt to copy
+
+For the whole job, fill this in and paste it:
+
+```
+Use the ytk-workflow skill to run the full YTK workflow on these genes.
+
+Input:   /path/to/genes.csv
+Output:  /path/to/output/
+Remove internal BsmBI/BsaI sites in the CDS: [True/False]
+```
+
+That is the whole prompt. Part type is always 3 and every format has a default,
+so neither needs saying. Plasmid names come from the `plasmid` column of your
+input; a row without one falls back to `<gene>_pYTK001`.
+
+Ask for "the ytk-workflow prompt" any time and it will print this back to you.
+
 ## The seven skills
 
 Each one takes one sequence or a batch.
@@ -81,7 +99,7 @@ amplified from cDNA is already YTK-compatible.
 **`ytk-clone`** - cuts and joins a flanked fragment into a backbone and writes the
 map. This is what SnapGene's cloning simulation does.
 
-> Clone the fragments in `out/ytk_order.csv` into pYTK001 and give me the maps.
+> Clone the fragments in `out/fragments/summary.csv` into pYTK001 and give me the maps.
 
 > Clone these into `pRS416.gb` with BsaI instead.
 
@@ -91,7 +109,7 @@ map. This is what SnapGene's cloning simulation does.
 
 **`ytk-verify-map`** - checks a map file, on its own or against a reference.
 
-> Check the maps in `out/maps/` against my hand-made ones in `refs/`.
+> Check the maps in `out/pYTK001_maps/` against my hand-made ones in `refs/`.
 
 **`ytk-workflow`** - all six, in order.
 
@@ -144,18 +162,38 @@ stops and lists them, and you say which.
 
 ## What you get back
 
-- `ytk_primers.csv` - two rows per gene, columns matching an oligo stock sheet
-- `ytk_order.csv` - the flanked sequences to order
-- `maps/` - one labelled circular map per plasmid
-- `fragments/` - one linear map per fragment
+One folder, laid out the same way every time:
 
-Maps are SnapGene `.dna` by default. Add `--format genbank` to `ytk-add-overhangs`
-and `ytk-clone` to get `.gb` files instead, for anyone who does not have SnapGene.
-The plasmid is identical either way.
+```
+out/
+  input_genes.csv        a copy of what you gave it
+  primers.csv            two rows per gene, one per oligo
+  fragments/
+    summary.csv          the synthesis order: name, part_type, plasmid, sequence, notes
+    <gene>.gb            the flanked sequence, one map per gene
+  pYTK001_maps/
+    summary.csv          name, part_type, plasmid, notes
+    <plasmid>.gb         one labelled circular map per plasmid
+```
+
+The map folder is named after the backbone you actually cloned into, so a run
+against another vector cannot be mistaken for an entry-vector run.
+
+`fragments/summary.csv` is the file you place the synthesis order from. Its
+`notes` column says, per gene, what was cleared out of the CDS and what is still
+in it - for example `BsmBI site removed; BsaI site in the CDS`. The two are not
+exclusive: one enzyme can be swapped out while another stays, because no
+synonymous codon removes it. **The "still in it" half is always measured again on
+the sequence being ordered**, so a stale note can mislabel a safe fragment but
+can never hide a site.
+
+Maps are GenBank by default, which SnapGene also opens. Add `--format dna` to
+`ytk-add-overhangs` and `ytk-clone` for SnapGene `.dna` files instead. The
+plasmid is identical either way.
 
 **Your sequences are never changed unless you ask.** There is one exception, and
 you have to name it: `ytk-cds-qc --remove-sites` swaps a codon to remove an
-internal BsmBI or BsaI site. It writes a new file, leaves yours alone, prints
+internal BsmBI or BsaI site. It writes `corrected.csv`, leaves yours alone, prints
 every changed base, and refuses if the protein would change at all. On the two
 real genes in `tests/data/` it changes one base.
 

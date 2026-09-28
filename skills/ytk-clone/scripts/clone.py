@@ -242,8 +242,9 @@ def main():
                          f"default {BACKBONE_NAME}")
     ap.add_argument("--enzyme", default="BsmBI",
                     help="Type IIS enzyme to cut with (default BsmBI)")
-    ap.add_argument("--format", default="dna", choices=["dna", "genbank"],
-                    help="output map format (default dna, for SnapGene)")
+    ap.add_argument("--format", default="genbank", choices=["genbank", "dna"],
+                    help="output map format (default genbank, which SnapGene "
+                         "also opens)")
     args = ap.parse_args()
 
     if not args.input and not args.fragment:
@@ -285,26 +286,33 @@ def main():
                      f"Nothing was written. Your sequence was not changed.\n"
                      f"Send this fragment to whoever maintains the plugin.")
 
-    # Two folders, because plasmid names come from the input and cannot be
-    # matched by a pattern. A later step can just take maps/*.
+    # One folder, named after the backbone actually used, so a run against a
+    # different vector cannot be mistaken for an entry-vector run.
     outdir = Path(args.outdir)
-    fragments = outdir / "fragments"
-    maps = outdir / "maps"
-    for folder in (fragments, maps):
-        folder.mkdir(parents=True, exist_ok=True)
+    maps = outdir / f"{backbone_name}_maps"
+    maps.mkdir(parents=True, exist_ok=True)
+
+    # part_type and notes ride along on the fragment file when ytk-add-overhangs
+    # wrote it. Both are optional: a bare FASTA of fragments still clones.
+    part_types = sg.read_column(args.input[0], sg.PART_TYPE_HEADERS) if args.input else {}
+    notes = sg.read_column(args.input[0], sg.NOTES_HEADERS) if args.input else {}
 
     suffix = ".gb" if args.format == "genbank" else ".dna"
     width = max(len(p) for _, _, p, _ in built) + 2
     print(f"{'fragment':24s} {'plasmid':{width}s} {'frag bp':>8s} "
           f"{'plasmid bp':>11s}  internal site")
+    summary = [["name", "part_type", "plasmid", "notes"]]
     for name, gene, plasmid_name, plasmid in built:
-        sg.write_map(fragments / f"{name}{suffix}", gene, circular=False,
-                     notes_type="Natural")
         sg.write_map(maps / f"{plasmid_name}{suffix}", plasmid, circular=True,
                      notes_type="Synthetic", description="synthetic circular DNA")
+        summary.append([name, part_types.get(name, ""), plasmid_name,
+                        notes.get(name, "")])
 
         print(f"{name:24s} {plasmid_name:{width}s} {len(gene):>8d} {len(plasmid):>11d}"
               f"  {'yes' if has_internal_site(gene) else 'no'}")
+
+    with open(maps / "summary.csv", "w", newline="") as fh:
+        csv.writer(fh).writerows(summary)
 
     flagged = [name for name, gene, _, _ in built if has_internal_site(gene)]
     if flagged:
@@ -315,8 +323,7 @@ def main():
         print("Worth knowing at the bench: those parts cannot be re-cut with "
               "the same enzyme later.")
 
-    print(f"\nwrote {len(genes)} maps to {maps} "
-          f"and {len(genes)} fragments to {fragments}")
+    print(f"\nwrote {len(genes)} maps and summary.csv to {maps}")
 
 
 if __name__ == "__main__":
