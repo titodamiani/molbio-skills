@@ -52,6 +52,8 @@ def require(package, module=None):
 NAME_HEADERS = {"name", "gene", "id", "gene_name", "gene name"}
 SEQUENCE_HEADERS = {"sequence", "seq", "dna"}
 PLASMID_HEADERS = {"plasmid", "plasmid_name", "plasmid name", "construct"}
+NOTES_HEADERS = {"notes", "note"}
+PART_TYPE_HEADERS = {"part_type", "part type", "type"}
 
 
 def read_genes(path):
@@ -86,17 +88,41 @@ def read_genes(path):
     return genes
 
 
-def _read_gene_csv(path):
-    with open(path, newline="") as fh:
+def _rows(path):
+    """Every non-blank row, and the header if there is one.
+
+    utf-8-sig, because a CSV saved by Excel starts with a byte order mark.
+    Without it the first header reads as "﻿name", matches nothing, and the
+    header row is then parsed as a gene. Both readers go through here, so they
+    agree on what a header is and neither can drift from the other.
+    """
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         rows = [r for r in csv.reader(fh) if any(cell.strip() for cell in r)]
 
+    if not rows:
+        return [], None
+
     header = [cell.strip().lower() for cell in rows[0]]
-    name_at, sequence_at, plasmid_at = 0, 1, 2
     if set(header) & NAME_HEADERS and set(header) & SEQUENCE_HEADERS:
-        name_at = next(i for i, h in enumerate(header) if h in NAME_HEADERS)
-        sequence_at = next(i for i, h in enumerate(header) if h in SEQUENCE_HEADERS)
-        plasmid_at = next((i for i, h in enumerate(header) if h in PLASMID_HEADERS), None)
-        rows = rows[1:]
+        return rows[1:], header
+    return rows, None
+
+
+def _column_at(header, wanted):
+    return next((i for i, h in enumerate(header) if h in wanted), None)
+
+
+def _read_gene_csv(path):
+    rows, header = _rows(path)
+    if not rows:
+        return []
+
+    if header:
+        name_at = _column_at(header, NAME_HEADERS)
+        sequence_at = _column_at(header, SEQUENCE_HEADERS)
+        plasmid_at = _column_at(header, PLASMID_HEADERS)
+    else:
+        name_at, sequence_at, plasmid_at = 0, 1, 2
 
     genes = []
     for row in rows:
@@ -105,6 +131,37 @@ def _read_gene_csv(path):
             plasmid = row[plasmid_at].strip() or None
         genes.append((row[name_at].strip(), row[sequence_at].strip().upper(), plasmid))
     return genes
+
+
+def read_column(path, wanted):
+    """An optional extra column of a gene CSV, as {gene name: value}.
+
+    Used for the `notes` and `part_type` columns that ytk-add-overhangs writes
+    and later steps carry through. Returns {} for FASTA, GenBank, .dna, a CSV
+    with no header, or a CSV without that column - the columns are optional
+    everywhere, so a missing one is not an error.
+
+    The value rides on the same row as the sequence it describes, which is the
+    point: there is no join key, so a note can never end up attached to a
+    different sequence than the one it was written for.
+    """
+    path = Path(path)
+    if path.suffix.lower() != ".csv":
+        return {}
+
+    rows, header = _rows(path)
+    if not header:
+        return {}
+    name_at = _column_at(header, NAME_HEADERS)
+    value_at = _column_at(header, wanted)
+    if value_at is None:
+        return {}
+
+    found = {}
+    for row in rows:
+        if len(row) > value_at:
+            found[row[name_at].strip()] = row[value_at].strip()
+    return found
 
 
 def _check_genes(path, genes):

@@ -45,18 +45,25 @@ feature is left, it is used. If several are, the run stops and lists them, and
 
 ## What comes out
 
-`out/ytk_primers.csv`, two rows per sequence, named `<name>_forward` and
-`<name>_reverse`. The columns match the lab's oligo stock sheet:
+`out/primers.csv`, two rows per sequence, one per oligo, named
+`<name>_forward` and `<name>_reverse`. The columns:
 
-`name`, `sequence`, `Full length (bp)`, `Binding region length (bp)`, `GC%`,
-`Tm Phusion (C)`, `Combined Tm Phusion (C)`, `warnings`.
+`oligo_name`, `sequence`, `full_length_bp`, `bind_region_length_bp`,
+`bind_region_gc_pct`, `Tm_phusion_C`, `Tm_phusion_combined_C`, `warnings`.
 
-**Every number is measured on the binding region alone**, not the whole primer.
-Only the binding region sticks to the template in the first PCR cycle.
+**Every number except `full_length_bp` is measured on the binding region
+alone**, not the whole oligo - hence the `bind_region_` names. Only the binding
+region sticks to the template in the first PCR cycle, and the flanks are fixed
+YTK adapters, so their GC is not the designer's to fix.
 
-`Combined Tm Phusion (C)` is not a melting temperature. It is the annealing
+`Tm_phusion_combined_C` is not a melting temperature. It is the annealing
 temperature to run the PCR at: three degrees above the lower of the two primer
 Tms, which is NEB's rule for primers over 20 nt.
+
+`warnings` holds oligo problems only - a low Tm, a GC outside the band, a long
+single-base run, an over-length primer, an unbalanced pair. A cut site inside
+the gene is **not** here: that is a fact about the gene, and it belongs to
+`ytk-cds-qc` and to `fragments/summary.csv`.
 
 ## The rules it follows
 

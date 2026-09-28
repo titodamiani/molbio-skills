@@ -1,6 +1,6 @@
 ---
 name: ytk-clone
-description: Simulate Golden Gate cloning and write the map of the finished construct, the way SnapGene's cloning simulation does. Cuts flanked fragments and a backbone with a Type IIS enzyme, checks the sticky ends match, joins them, and writes one map per plasmid, as a SnapGene .dna or GenBank file. Defaults to the MoClo Yeast Toolkit entry reaction - pYTK001 with BsmBI - and takes any other backbone and any Type IIS enzyme. Use this whenever someone has flanked fragments and wants plasmid maps, SnapGene files, Golden Gate assembly simulated, YTK Type 3 part plasmids, entry vector cloning, or asks whether a cloning will work - including when they only say "turn these into plasmids", "make maps for this batch", or "clone these into the vector". For bare genes with no overhangs yet, use ytk-add-overhangs first.
+description: Simulate Golden Gate cloning and write the map of the finished construct, the way SnapGene's cloning simulation does. Cuts flanked fragments and a backbone with a Type IIS enzyme, checks the sticky ends match, joins them, and writes one map per plasmid, as a GenBank or SnapGene .dna file. Defaults to the MoClo Yeast Toolkit entry reaction - pYTK001 with BsmBI - and takes any other backbone and any Type IIS enzyme. Use this whenever someone has flanked fragments and wants plasmid maps, SnapGene files, Golden Gate assembly simulated, YTK Type 3 part plasmids, entry vector cloning, or asks whether a cloning will work - including when they only say "turn these into plasmids", "make maps for this batch", or "clone these into the vector". For bare genes with no overhangs yet, use ytk-add-overhangs first.
 ---
 
 # Build YTK part plasmids
@@ -11,10 +11,8 @@ The input is the fragment as ordered from a synthesis company, with the YTK
 flanks already on it. A bare gene is refused. Use **ytk-add-overhangs** to
 design the fragment first.
 
-For each fragment it writes two files:
-
-- `<fragment>.dna` — the fragment on its own, linear
-- `<plasmid>.dna` — the finished circular plasmid
+For each fragment it writes one map: `<plasmid>.gb`, the finished circular
+plasmid.
 
 ## Run it
 
@@ -41,16 +39,26 @@ directory. The script finds the shared code and the parts table by itself.
 
 ## What comes out
 
-Two folders, because plasmid names come from the input and cannot be matched by
-a pattern:
+One folder, named after the backbone actually cloned into, so a run against
+another vector cannot be mistaken for an entry-vector run:
 
-- `OUTDIR/maps/` - one circular map per plasmid, not yet labelled
-- `OUTDIR/fragments/` - one linear map per fragment
+```
+OUTDIR/pYTK001_maps/
+  summary.csv    name, part_type, plasmid, notes
+  <plasmid>.gb   one circular map per plasmid, not yet labelled
+```
 
-`--format genbank` writes `.gb` files instead of SnapGene `.dna`. The default is
-`dna`. The plasmid is identical either way; only the file format changes.
+`part_type` and `notes` are carried over from the fragment file when it has
+those columns, which it does when `ytk-add-overhangs` wrote it. Both are
+optional: a bare FASTA of fragments still clones, it just leaves them blank.
 
-So the next step can just take `OUTDIR/maps/*.dna`.
+`--format dna` writes SnapGene `.dna` instead of GenBank. The plasmid is
+identical either way; only the file format changes.
+
+So the next step can just take `OUTDIR/pYTK001_maps/*.gb`.
+
+The linear post-digest pieces are not written. Nothing downstream reads them,
+and the fragment maps from `ytk-add-overhangs` are the ones worth keeping.
 
 ## Input
 
@@ -86,8 +94,8 @@ pTP412, pTP768 and pTP002 can be three plasmids in a row. So the script never
 makes up a number.
 
 Where a row gives no plasmid name, and for every FASTA file, the plasmid is
-named `<gene>_<backbone>.dna` — for example `Pi_fim_NCS_c1_pYTK001.dna`. The
-vector is in the name because a folder of `_plasmid.dna` files does not say
+named `<gene>_<backbone>.gb` — for example `Pi_fim_NCS_c1_pYTK001.gb`. The
+vector is in the name because a folder of `_plasmid.gb` files does not say
 what anything is in.
 
 Prefer the CSV with a plasmid column. If someone hands you a FASTA and cares

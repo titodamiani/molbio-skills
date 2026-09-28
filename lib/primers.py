@@ -15,7 +15,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import deps
-import enzymes
 import flanks
 
 deps.require("primer3")
@@ -153,9 +152,9 @@ def _describe(name, sequence, pair, adapters, pad):
     forward = flanks.forward_primer(forward_binding, adapters, pad)
     reverse = flanks.reverse_primer(reverse_binding, adapters, pad)
 
+    # Only oligo warnings here. A cut site inside the gene is a fact about the
+    # gene, reported by ytk-cds-qc and by the order file, not about the primer.
     warnings = []
-    for enzyme in enzymes.in_sequence(sequence):
-        warnings.append(f"the sequence holds a {enzyme} site")
     for label, binding, primer, tm in (("forward", forward_binding, forward, tm_f),
                                        ("reverse", reverse_binding, reverse, tm_r)):
         gc = gc_percent(binding)
@@ -195,24 +194,31 @@ def _describe(name, sequence, pair, adapters, pad):
     }
 
 
+# Defined above rows_for_csv, which builds its dicts with these exact keys.
+# The two are kept in sync by hand, so change them together.
+CSV_COLUMNS = ["oligo_name", "sequence", "full_length_bp",
+               "bind_region_length_bp", "bind_region_gc_pct",
+               "Tm_phusion_C", "Tm_phusion_combined_C", "warnings"]
+
+
 def rows_for_csv(designed):
-    """Two CSV rows per pair, matching the columns of the oligo stock sheet."""
+    """Two CSV rows per pair, one per oligo.
+
+    bind_region_gc_pct says what has always been measured: the GC of the
+    binding region only, not of the whole oligo. The flanks are fixed YTK
+    adapters, so their GC is not the primer designer's to fix.
+    """
     rows = []
     for side in ("forward", "reverse"):
         binding = designed[f"{side}_binding"]
         rows.append({
-            "name": f"{designed['name']}_{side}",
+            "oligo_name": f"{designed['name']}_{side}",
             "sequence": designed[side],
-            "Full length (bp)": len(designed[side]),
-            "Binding region length (bp)": len(binding),
-            "GC%": round(gc_percent(binding)),
-            "Tm Phusion (C)": round(designed[f"{side}_tm"]),
-            "Combined Tm Phusion (C)": designed["annealing_temp"],
+            "full_length_bp": len(designed[side]),
+            "bind_region_length_bp": len(binding),
+            "bind_region_gc_pct": round(gc_percent(binding)),
+            "Tm_phusion_C": round(designed[f"{side}_tm"]),
+            "Tm_phusion_combined_C": designed["annealing_temp"],
             "warnings": "; ".join(designed["warnings"]),
         })
     return rows
-
-
-CSV_COLUMNS = ["name", "sequence", "Full length (bp)",
-               "Binding region length (bp)", "GC%", "Tm Phusion (C)",
-               "Combined Tm Phusion (C)", "warnings"]

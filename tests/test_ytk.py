@@ -338,29 +338,39 @@ class TestGenBankEndToEnd(unittest.TestCase):
         finally:
             sys.argv = argv
 
-    def test_clone_writes_genbank_when_asked(self):
-        self.run_clone("--format", "genbank")
-        self.assertEqual(["pTP412.gb"], [p.name for p in (self.out / "maps").iterdir()])
-        self.assertEqual(["Pi_fim_NCS_c1.gb"],
-                         [p.name for p in (self.out / "fragments").iterdir()])
+    def maps(self):
+        """The map folder is named after the backbone actually used, so a run
+        against another vector cannot be mistaken for an entry-vector run."""
+        return self.out / f"{clone.BACKBONE_NAME}_maps"
 
-    def test_clone_still_writes_snapgene_by_default(self):
+    def test_clone_writes_genbank_by_default(self):
         self.run_clone()
-        self.assertEqual(["pTP412.dna"], [p.name for p in (self.out / "maps").iterdir()])
+        self.assertEqual(["pTP412.gb", "summary.csv"],
+                         sorted(p.name for p in self.maps().iterdir()))
+
+    def test_clone_writes_snapgene_when_asked(self):
+        self.run_clone("--format", "dna")
+        self.assertEqual(["pTP412.dna", "summary.csv"],
+                         sorted(p.name for p in self.maps().iterdir()))
 
     def test_both_formats_give_the_same_plasmid(self):
         self.run_clone()
-        self.run_clone("--format", "genbank")
-        maps = self.out / "maps"
-        self.assertEqual(sg.read_map(maps / "pTP412.dna")["sequence"],
-                         sg.read_map(maps / "pTP412.gb")["sequence"])
+        self.run_clone("--format", "dna")
+        self.assertEqual(sg.read_map(self.maps() / "pTP412.dna")["sequence"],
+                         sg.read_map(self.maps() / "pTP412.gb")["sequence"])
 
     def test_verify_map_reads_a_genbank_file(self):
-        self.run_clone("--format", "genbank")
-        results = verify.check_file(self.out / "maps" / "pTP412.gb",
+        self.run_clone()
+        results = verify.check_file(self.maps() / "pTP412.gb",
                                     genes=[("Pi_fim_NCS_c1", GENES["Pi_fim_NCS_c1"])])
         failed = [message for passed, message in results if not passed]
         self.assertEqual([], failed)
+
+    def test_the_summary_carries_the_plasmid_name(self):
+        self.run_clone()
+        rows = (self.maps() / "summary.csv").read_text().splitlines()
+        self.assertEqual("name,part_type,plasmid,notes", rows[0])
+        self.assertIn("pTP412", rows[1])
 
 
 class TestPartsTable(unittest.TestCase):
@@ -393,6 +403,13 @@ class TestInput(unittest.TestCase):
     def test_headers_are_matched_whatever_the_capitals(self):
         self.assertEqual([("gene1", "ATGAAATAA", None)],
                          self.read("NAME,SEQUENCE\ngene1,ATGAAATAA\n"))
+
+    def test_a_byte_order_mark_from_excel_is_ignored(self):
+        # A CSV saved by Excel starts with a BOM. Read as plain UTF-8 the first
+        # header becomes "﻿name", matches nothing, and the header row is
+        # then parsed as a gene.
+        self.assertEqual([("gene1", "ATGAAATAA", None)],
+                         self.read("﻿name,sequence\ngene1,ATGAAATAA\n"))
 
     def read(self, text, suffix=".csv"):
         with tempfile.TemporaryDirectory() as tmp:

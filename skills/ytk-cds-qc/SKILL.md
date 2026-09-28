@@ -64,7 +64,14 @@ both at the third position of a codon where the genetic code is redundant.
 
 Safeguards. None of them is optional:
 
-- **The input file is never touched.** A new `fixed/corrected.fasta` is written.
+- **The input file is never touched.** A new `corrected.csv` is written in
+  `--outdir`, with `name`, `sequence`, `plasmid` and `notes`. It is a CSV and
+  not a FASTA because a FASTA header cannot carry the plasmid name or the notes,
+  and both have to reach the next step.
+- **Every row gets a note**, including the untouched ones, saying what was
+  cleared and what is still there - for example `BsmBI site removed`, or
+  `BsmBI site removed; BsaI site in the CDS` when no synonymous codon removes
+  the second one. A blank note would read as "clean", so there are none.
 - **Every changed base is printed** with its position, its codon number, the old
   and new base, and the amino acid.
 - **The protein is translated before and after and compared.** If the protein

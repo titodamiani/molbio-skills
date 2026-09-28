@@ -1,6 +1,6 @@
 ---
 name: ytk-add-overhangs
-description: Add the MoClo Yeast Toolkit (YTK) Golden Gate flanks to a DNA sequence, so the fragment can be ordered and later cut into a YTK part plasmid. Puts the BsmBI and BsaI sites and the right four-base overhang pair around the sequence for the part type given, and writes a SnapGene .dna or GenBank file. Use this whenever someone has a sequence and wants overhangs, flanks, adapters, a sequence to order or synthesise, a gene "made YTK compatible", or asks what to send to Twist or IDT for a Type 3 coding sequence or any other YTK part type. For the whole job at once, use ytk-workflow.
+description: Add the MoClo Yeast Toolkit (YTK) Golden Gate flanks to a DNA sequence, so the fragment can be ordered and later cut into a YTK part plasmid. Puts the BsmBI and BsaI sites and the right four-base overhang pair around the sequence for the part type given, and writes a GenBank or SnapGene .dna file. Use this whenever someone has a sequence and wants overhangs, flanks, adapters, a sequence to order or synthesise, a gene "made YTK compatible", or asks what to send to Twist or IDT for a Type 3 coding sequence or any other YTK part type. For the whole job at once, use ytk-workflow.
 ---
 
 # Add YTK overhangs to a sequence
@@ -24,9 +24,9 @@ Three things are required. Never guess any of them.
 Ask for these two as well, if they matter to the person:
 
 4. **Where to save** the output. The default is the folder you are in.
-5. **A different format.** The default output is a SnapGene `.dna` file.
-   GenBank is there for anyone without SnapGene. CSV and FASTA are there for
-   sending sequences to a synthesis company.
+5. **A different format.** Maps are GenBank, which SnapGene also opens.
+   `--format dna` writes SnapGene `.dna` instead. The synthesis order is always
+   written as CSV either way.
 
 If the part type is missing, ask. Do not read it off a file name, a gene name
 or the fact that a sequence starts with ATG.
@@ -49,14 +49,39 @@ every row, so keep one file per part type.
 
 ## Output
 
-One map per sequence, called `<name>_oh.dna`. It is linear, and the sequence
-itself is labelled inside the flanks. Cut sites are left unlabelled on purpose.
-SnapGene shows them live under Enzymes, so a written-in label goes out of date.
+Everything goes in a `fragments/` folder under `--outdir`:
 
-`--format genbank` writes `<name>_oh.gb` instead of `.dna`.
-`--format fasta` writes `<name>_oh.fasta` instead, one file per sequence.
-`--format csv` writes a single `ytk_order.csv` for the whole batch, with one
-row per part. Use CSV for an order form.
+```
+fragments/
+  summary.csv    name, part_type, plasmid, sequence, notes
+  <gene>.gb      one linear map per sequence
+```
+
+Each map is linear, and the sequence itself is labelled inside the flanks. Cut
+sites are left unlabelled on purpose: SnapGene shows them live under Enzymes, so
+a written-in label goes out of date. `--format dna` writes `<gene>.dna` instead.
+
+`summary.csv` does two jobs. It is the file a synthesis order is placed from,
+and it is the input to `ytk-clone`. The `name` column is the plain gene name,
+because `ytk-clone` names its output files from it.
+
+### The notes column
+
+Per gene, what was cleared out of the CDS and what is still in it:
+
+- `input CDS contained no inner BsmBI/BsaI cut sites`
+- `BsmBI site removed` - per enzyme cleared, read from the `notes` column of the
+  input file, which `ytk-cds-qc --remove-sites` writes
+- `BsaI site in the CDS` - per enzyme still there
+
+The two are not exclusive, so a note can read
+`BsmBI site removed; BsaI site in the CDS`: one enzyme can be swapped out while
+another stays, because no synonymous codon removes it.
+
+**The "still there" half is always measured again here**, on the sequence being
+ordered, and nothing read from a file can suppress it. A stale or hand-edited
+`notes` column can therefore mislabel a safe fragment, but it can never hide a
+site. This file costs real money at a vendor.
 
 The flanked sequence is always printed as well, so it can be copied straight
 into SnapGene or a web form.

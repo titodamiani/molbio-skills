@@ -88,7 +88,7 @@ def main():
     if rows:
         outdir = Path(args.outdir)
         outdir.mkdir(parents=True, exist_ok=True)
-        out = outdir / "ytk_primers.csv"
+        out = outdir / "primers.csv"
         with open(out, "w", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=primers.CSV_COLUMNS)
             writer.writeheader()
@@ -96,9 +96,9 @@ def main():
         print(f"{len(rows) // 2} pairs -> {out}\n")
         print(f"{'name':32s} {'bp':>3s} {'bind':>4s} {'GC%':>4s} {'Tm':>3s} {'Ta':>3s}")
         for row in rows:
-            print(f"{row['name'][:32]:32s} {row['Full length (bp)']:3d} "
-                  f"{row['Binding region length (bp)']:4d} {row['GC%']:4d} "
-                  f"{row['Tm Phusion (C)']:3d} {row['Combined Tm Phusion (C)']:3d}")
+            print(f"{row['oligo_name'][:32]:32s} {row['full_length_bp']:3d} "
+                  f"{row['bind_region_length_bp']:4d} {row['bind_region_gc_pct']:4d} "
+                  f"{row['Tm_phusion_C']:3d} {row['Tm_phusion_combined_C']:3d}")
 
     table = log.table()
     if table:

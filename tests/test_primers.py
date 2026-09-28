@@ -215,6 +215,27 @@ class TestAnnealingTemperature(unittest.TestCase):
         self.assertGreater(primers.annealing_temp(60.0, 60.0), 60.0)
 
 
+class TestTheCsvColumns(unittest.TestCase):
+    """CSV_COLUMNS and the dict keys in rows_for_csv are kept in sync by hand.
+    A rename that touches one and not the other writes a column of empty cells,
+    and DictWriter says nothing about it."""
+
+    def design(self):
+        return primers.design("gene1", "ATG" + "GCTAGCTAGCTTGCATCGA" * 4 + "TAA",
+                              ADAPTERS)
+
+    def test_every_column_is_filled(self):
+        for row in primers.rows_for_csv(self.design()):
+            self.assertEqual(sorted(primers.CSV_COLUMNS), sorted(row))
+
+    def test_a_cut_site_in_the_gene_is_not_an_oligo_warning(self):
+        # It is a fact about the gene. ytk-cds-qc reports it, and it goes in the
+        # order file. Repeating it on both oligo rows only buried the real ones.
+        designed = primers.design("gene1", "ATGCGTCTCAAAA" + "GCTAGCTAGCTTGCATCGA" * 3
+                                  + "TAA", ADAPTERS)
+        self.assertNotIn("holds", "; ".join(designed.get("warnings", [])))
+
+
 class TestTellingTheInsertFromTheBackbone(unittest.TestCase):
     """A part plasmid labels its resistance marker as a CDS and the insert as a
     misc_feature, so picking the one CDS picks CamR. Known parts are set aside

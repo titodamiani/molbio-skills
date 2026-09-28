@@ -9,8 +9,10 @@ overhang pair that fixes where the part sits in a YTK assembly.
 
 The part type must be given. It is never guessed from the sequence.
 
-One SnapGene file is written per sequence, called <name>_oh.dna. Use
---format genbank for GenBank. --format fasta or --format csv for plain text.
+Everything lands in a fragments/ folder under --outdir: one GenBank map per
+sequence, called <name>.gb, plus summary.csv. That summary is both the file a
+synthesis order is placed from and the input to ytk-clone. Use --format dna for
+SnapGene files instead.
 
 Input sequences are never changed. If one does not fit the type asked for,
 the script says so and stops.
@@ -26,6 +28,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 import cds        # noqa: E402
 import enzymes    # noqa: E402
 import flanks     # noqa: E402
+import notes      # noqa: E402
 import sequences  # noqa: E402
 import snapgene as sg
 
@@ -77,6 +80,8 @@ def flank(sequence, adapters):
     return flanks.flank(sequence, adapters)
 
 
+
+
 def write_labelled_map(path, name, sequence, ordered, adapters):
     """Write the flanked sequence as a linear map, SnapGene .dna or GenBank.
 
@@ -106,9 +111,9 @@ def main():
     parser.add_argument("--feature", help="which feature holds the CDS, for map files")
     parser.add_argument("--type", required=True, help="YTK part type, for example 3")
     parser.add_argument("--name", help="name for a single sequence")
-    parser.add_argument("--format", default="dna",
-                       choices=["dna", "genbank", "fasta", "csv"],
-                       help="output file format (default dna, for SnapGene)")
+    parser.add_argument("--format", default="genbank", choices=["genbank", "dna"],
+                       help="format of the per-fragment maps (default genbank, "
+                            "which SnapGene also opens)")
     parser.add_argument("--outdir", default=".", help="where to write the output")
     parser.add_argument("--no-stop-codon", nargs="+", default=[], metavar="NAME",
                        help="names of sequences that end without a stop codon on purpose")
@@ -144,43 +149,40 @@ def main():
         sys.exit(f"--no-stop-codon names a sequence that is not in the input: "
                  f"{', '.join(sorted(unknown))}")
 
+    # The notes column of the input, when there is one. cds_qc writes it when it
+    # removes a cut site, and it rides on the same row as the sequence it
+    # describes, so a note cannot end up against the wrong gene.
+    inherited = sg.read_column(args.input, sg.NOTES_HEADERS) if args.input else {}
+
     rows = []
     for name, sequence, plasmid in parts:
         warnings = check(name, sequence, adapters, name in args.no_stop_codon)
-        rows.append((name, sequence, flank(sequence, adapters), warnings, plasmid))
+        rows.append((name, sequence, flank(sequence, adapters), warnings, plasmid,
+                     notes.for_order(sequence, inherited.get(name, ""))))
 
-    outdir = Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    fragments = Path(args.outdir) / "fragments"
+    fragments.mkdir(parents=True, exist_ok=True)
+    suffix = ".gb" if args.format == "genbank" else ".dna"
 
-    for name, sequence, ordered, warnings, _ in rows:
+    for name, sequence, ordered, warnings, _, note in rows:
         print(f"\n{name}  type {args.type}  {len(sequence)} bp in, {len(ordered)} bp to order")
         print(ordered)
         for warning in warnings:
             print(f"  note: {name} {warning}")
+        path = fragments / f"{name}{suffix}"
+        write_labelled_map(path, name, sequence, ordered, adapters)
+        print(f"  wrote {path}")
 
-        if args.format in ("dna", "genbank"):
-            suffix = ".gb" if args.format == "genbank" else ".dna"
-            path = outdir / f"{name}_oh{suffix}"
-            write_labelled_map(path, name, sequence, ordered, adapters)
-        elif args.format == "fasta":
-            path = outdir / f"{name}_oh.fasta"
-            path.write_text(f">{name}_oh YTK type {args.type}\n{ordered}\n")
-        if args.format != "csv":
-            print(f"  wrote {path}")
-
-    if args.format == "csv":
-        path = outdir / "ytk_order.csv"
-        with open(path, "w", newline="") as fh:
-            writer = csv.writer(fh)
-            writer.writerow(["name", "plasmid", "part_type", "length",
-                             "sequence", "notes"])
-            for name, _, ordered, warnings, plasmid in rows:
-                # The plain name, not <name>_oh: ytk-clone reads this column and
-                # names its files from it. The plasmid column is carried through
-                # so the numbers from the input survive into the maps.
-                writer.writerow([name, plasmid or "", args.type, len(ordered),
-                                 ordered, "; ".join(warnings)])
-        print(f"\nwrote {path}")
+    # summary.csv is both the synthesis order and the handoff to ytk-clone, so it
+    # carries plasmid and part_type as well. The name column is the plain gene
+    # name, not <name>_oh: ytk-clone names its output files from it.
+    summary = fragments / "summary.csv"
+    with open(summary, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["name", "part_type", "plasmid", "sequence", "notes"])
+        for name, _, ordered, _, plasmid, note in rows:
+            writer.writerow([name, args.type, plasmid or "", ordered, note])
+    print(f"\nwrote {summary}")
 
     if adapters["note"]:
         print(f"\ntype {args.type}: {adapters['note']}")
