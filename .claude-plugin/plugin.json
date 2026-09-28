@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "molbio-skills",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Build, label and check SnapGene plasmid maps for MoClo Yeast Toolkit cloning.",
   "author": {
     "name": "Tito Damiani",
