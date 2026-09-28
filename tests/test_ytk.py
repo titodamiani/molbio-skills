@@ -19,6 +19,7 @@ The five cases each cover something different:
     Pi_fim_NCS_c1   the linear writer, which the plasmid cases never touch
 """
 import contextlib
+import csv
 import importlib.util
 import io
 import sys
@@ -29,7 +30,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(__file__).resolve().parent / "data"
 sys.path.insert(0, str(ROOT / "lib"))
+import flanks  # noqa: E402
+import notes  # noqa: E402
 import snapgene as sg  # noqa: E402
+
+
+def same_circle(a, b):
+    """True when two sequences describe the same circular DNA.
+
+    A test helper, not shipped code: only the tests ever ask this question as a
+    yes or no. Everything in lib/ wants the offset from sg.rotation_of instead.
+    """
+    return sg.rotation_of(a, b) is not None
 
 
 def load(path):
@@ -52,7 +64,7 @@ BACKBONE = clone.backbone_sequence()
 # the same way ytk-add-overhangs flanks them. That makes these cases a test of
 # the two skills together.
 ADAPTERS = overhangs.read_overhangs()
-FRAGMENTS = {name: overhangs.flank(seq, ADAPTERS["3"]) for name, seq in GENES.items()}
+FRAGMENTS = {name: flanks.flank(seq, ADAPTERS["3"]) for name, seq in GENES.items()}
 
 
 def build(gene_name):
@@ -68,10 +80,10 @@ class TestCircleCompare(unittest.TestCase):
 
     def test_a_turned_circle_is_still_the_same_circle(self):
         circle = "AAAACCCCGGGGTTTT"
-        self.assertTrue(sg.same_circle(circle, sg.rotate_to(circle, "GGGG")))
+        self.assertTrue(same_circle(circle, sg.rotate_to(circle, "GGGG")))
 
     def test_different_dna_is_not_the_same_circle(self):
-        self.assertFalse(sg.same_circle("AAAACCCC", "AAAACCCG"))
+        self.assertFalse(same_circle("AAAACCCC", "AAAACCCG"))
 
     def test_plain_text_compare_would_have_missed_it(self):
         turned = sg.rotate_to("AAAACCCCGGGGTTTT", "GGGG")
@@ -105,7 +117,7 @@ class TestSequencesAreNeverChanged(unittest.TestCase):
 
     def test_the_wrong_part_type_is_refused(self):
         # Type 5 flanks cut cleanly, but the overhangs do not fit pYTK001.
-        fragment = overhangs.flank(GENES["Pi_fim_NCS_c5"], ADAPTERS["5"])
+        fragment = flanks.flank(GENES["Pi_fim_NCS_c5"], ADAPTERS["5"])
         with self.assertRaises(clone.WrongFragment):
             clone.assemble(fragment, BACKBONE)
 
@@ -154,7 +166,7 @@ class TestPTP412(unittest.TestCase):
         self.assertTrue(clone.has_internal_site(FRAGMENTS["Pi_fim_NCS_c1"]))
 
     def test_same_circle_as_the_reference(self):
-        self.assertTrue(sg.same_circle(self.wanted, self.built))
+        self.assertTrue(same_circle(self.wanted, self.built))
 
     def test_the_reference_starts_somewhere_else(self):
         self.assertNotEqual(0, sg.rotation_of(self.wanted, self.built))
@@ -171,7 +183,7 @@ class TestPTP414(unittest.TestCase):
         self.assertIn("GGTCTC", GENES["Pi_fim_NCS_c3"])
 
     def test_same_circle_as_the_reference(self):
-        self.assertTrue(sg.same_circle(reference("pTP414"), build("Pi_fim_NCS_c3")))
+        self.assertTrue(same_circle(reference("pTP414"), build("Pi_fim_NCS_c3")))
 
     def test_the_gene_is_untouched(self):
         self.assertIsNotNone(
@@ -202,7 +214,7 @@ class TestPTP0457(unittest.TestCase):
     def test_still_matches_the_map_the_original_code_made(self):
         # tests/data/pTP0457.dna was not drawn by hand. It is what the working
         # code produced, kept here so a change in the logic gets noticed.
-        self.assertTrue(sg.same_circle(reference("pTP0457"), self.built))
+        self.assertTrue(same_circle(reference("pTP0457"), self.built))
 
     def test_the_gene_is_a_whole_number_of_codons(self):
         self.assertEqual(0, len(self.gene) % 3)
@@ -506,3 +518,80 @@ class TestAnnotation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestOrderNote(unittest.TestCase):
+    """The notes column of fragments/summary.csv is what a synthesis order is
+    placed from, so it must never claim a gene was clean when it was changed.
+
+    The cell is a CSV field someone can edit in Excel. Matching it against a
+    fixed phrase used to drop `BsmBI site removed.` for its full stop, and the
+    all-clear was then printed over a gene that really had a site taken out.
+    """
+
+    CLEAN = "ATGAAACCCGGGTAA"
+    DIRTY = "ATGCGTCTCAAATAA"      # holds a BsmBI site
+
+    def test_a_hand_edited_note_is_never_turned_into_the_all_clear(self):
+        for edited in ("BsmBI site removed.",
+                       "BsmBI Site Removed",
+                       "BsmBI site removed (checked by hand)"):
+            with self.subTest(edited):
+                self.assertNotEqual(notes.NO_SITES,
+                                    notes.for_order(self.CLEAN, edited))
+
+    def test_a_hand_edited_note_is_carried_through_word_for_word(self):
+        self.assertEqual("BsmBI site removed.",
+                         notes.for_order(self.CLEAN, "BsmBI site removed."))
+
+    def test_only_an_empty_cell_gives_the_all_clear(self):
+        self.assertEqual(notes.NO_SITES, notes.for_order(self.CLEAN, ""))
+        self.assertEqual(notes.NO_SITES,
+                         notes.for_order(self.CLEAN, notes.NO_SITES))
+
+    def test_a_site_in_the_cds_is_measured_and_not_inherited(self):
+        # Inheriting this half is what would let a stale note bless an unsafe
+        # fragment, so it is always read off the sequence being ordered.
+        self.assertEqual(f"BsmBI {notes.PRESENT}",
+                         notes.for_order(self.DIRTY, ""))
+        self.assertEqual(notes.NO_SITES,
+                         notes.for_order(self.CLEAN, f"BsaI {notes.PRESENT}"))
+
+
+class TestNotesAcrossSeveralInputFiles(unittest.TestCase):
+    """clone.py used to read its notes column from the first --input file only,
+    so a second file's genes lost the record of what was cleared out of them."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.out = root / "out"
+        self.first = root / "first.csv"
+        self.second = root / "second.csv"
+        self.first.write_text(
+            "name,sequence,plasmid,notes\n"
+            f"Pi_fim_NCS_c1,{FRAGMENTS['Pi_fim_NCS_c1']},pTP412,"
+            "BsmBI site removed\n")
+        self.second.write_text(
+            "name,sequence,plasmid,notes\n"
+            f"Pi_fim_NCS_c3,{FRAGMENTS['Pi_fim_NCS_c3']},pTP414,"
+            "BsaI site removed\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_every_input_file_keeps_its_notes(self):
+        argv = sys.argv
+        sys.argv = ["clone.py", "--input", str(self.first), str(self.second),
+                    "--outdir", str(self.out)]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                clone.main()
+        finally:
+            sys.argv = argv
+
+        summary = (self.out / f"{clone.BACKBONE_NAME}_maps" / "summary.csv")
+        rows = {row["name"]: row["notes"]
+                for row in csv.DictReader(summary.open())}
+        self.assertEqual({"Pi_fim_NCS_c1": "BsmBI site removed",
+                          "Pi_fim_NCS_c3": "BsaI site removed"}, rows)

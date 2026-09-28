@@ -21,10 +21,11 @@ This checks **sequences**. To check a finished `.dna` plasmid map instead, use
 python3 "$CLAUDE_SKILL_DIR/scripts/cds_qc.py" --input genes.csv
 ```
 
-One sequence instead of a file:
+One sequence instead of a file: write it to a one-line CSV first, so there is
+only ever one input path to reason about.
 
 ```
-python3 "$CLAUDE_SKILL_DIR/scripts/cds_qc.py" --sequence ATGAAA...TAA --name my_gene
+printf 'name,sequence\nmy_gene,ATGAAA...TAA\n' > genes.csv
 ```
 
 Input can be `.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`. For a map file,
@@ -55,7 +56,7 @@ If they do ask, there is a flag for it:
 
 ```
 python3 "$CLAUDE_SKILL_DIR/scripts/cds_qc.py" \
-    --input genes.csv --remove-sites --outdir fixed/
+    --input genes.csv --remove-sites
 ```
 
 It swaps one codon for a different codon of the same amino acid, so the protein
@@ -64,8 +65,9 @@ both at the third position of a codon where the genetic code is redundant.
 
 Safeguards. None of them is optional:
 
-- **The input file is never touched.** A new `corrected.csv` is written in
-  `--outdir`, with `name`, `sequence`, `plasmid` and `notes`. It is a CSV and
+- **The input file is never touched.** A new `corrected_genes.csv` is written
+  in the output folder, with `name`, `plasmid`, `sequence` and `notes` - the
+  same column order as the fragment summary. It is a CSV and
   not a FASTA because a FASTA header cannot carry the plasmid name or the notes,
   and both have to reach the next step.
 - **Every row gets a note**, including the untouched ones, saying what was

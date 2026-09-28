@@ -40,13 +40,25 @@ def after_removal(before, remaining):
 def for_order(sequence, inherited):
     """The note for the order file, from the input's note plus the sequence.
 
-    Only the "removed" half is taken from `inherited`. Anything still in the CDS
-    is measured again, here, on the sequence actually being ordered. A stale or
-    hand-edited notes column can therefore mislabel a safe fragment, but it can
-    never hide a site and bless an unsafe one. This file is what a synthesis
-    order is placed from, so that asymmetry is the whole point.
+    What is still in the CDS is never inherited: it is measured again, here, on
+    the sequence actually being ordered. A stale or hand-edited notes column can
+    therefore mislabel a safe fragment, but it can never hide a site and bless an
+    unsafe one. This file is what a synthesis order is placed from, so that
+    asymmetry is the whole point.
+
+    Everything else in the cell is carried through word for word, because the
+    notes column is a CSV cell someone can edit in Excel. Matching it against a
+    fixed phrase would drop `BsmBI site removed.` for its full stop, and the
+    all-clear would then be printed over a gene that really was changed. Only an
+    empty cell can produce the all-clear.
     """
-    clauses = [clause.strip() for clause in inherited.split(";")
-               if clause.strip().endswith(REMOVED)]
-    clauses += [f"{enzyme} {PRESENT}" for enzyme in enzymes.in_sequence(sequence)]
-    return _join(clauses)
+    kept = []
+    for clause in inherited.split(";"):
+        clause = clause.strip()
+        if not clause or clause == NO_SITES:
+            continue
+        if clause.endswith(PRESENT):
+            continue
+        kept.append(clause)
+    kept += [f"{enzyme} {PRESENT}" for enzyme in enzymes.in_sequence(sequence)]
+    return _join(kept)

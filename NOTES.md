@@ -109,6 +109,22 @@ the sequence rather than trust these cells.
 what primer3 computes. Their Tm was probably read off the mis-parsed region. The
 offset in `lib/primers.py` was fitted without those four rows.
 
+## The `unsure` column is data, not a gate
+
+`data/ytk_overhangs.tsv` still has an `unsure` column, and it is empty in every
+row. Types 8 and 8a were the only ones ever marked, and the paper plus pYTK083-085
+and pYTK089-091 confirmed both.
+
+`ytk-add-overhangs` used to read that column and refuse to run, behind an
+`--approve-unsure` flag. The flag was deleted in v0.5.0: with nothing in the
+column it could never fire, and a flag that cannot fire is worse than no flag,
+because the SKILL.md described a safeguard that was not there.
+
+**So filling that cell in again will not stop anything.** The column is kept
+because `tests/test_parts.py` checks it stays empty, which is what keeps the
+verification on record. If a part type ever does need a gate, the code for it
+has to come back too.
+
 ## Removing a cut site: one base is usually enough
 
 `lib/silent.py` swaps a codon for a synonym to remove an internal BsmBI or BsaI

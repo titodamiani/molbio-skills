@@ -4,15 +4,18 @@ The flanks carry the BsmBI sites that cut the part out of the synthesised
 fragment, the BsaI sites that put it into a later assembly, and the four-base
 overhang pair that fixes where the part sits in a YTK assembly.
 
-    python3 add_overhangs.py --sequence ATGGCG... --type 3 --name Pi_fim_NCS_c1
-    python3 add_overhangs.py --input parts.csv --type 3 --outdir out/
+    python3 add_overhangs.py --input parts.csv
+    python3 add_overhangs.py --input parts.csv --type 3a --outdir out/
 
-The part type must be given. It is never guessed from the sequence.
+The part type defaults to 3, which is the only type this plugin builds, and is
+printed on every run. It is still never read off the sequence: 3 against 3a
+against 3b is a design decision, not a property of the DNA.
 
-Everything lands in a fragments/ folder under --outdir: one GenBank map per
-sequence, called <name>.gb, plus summary.csv. That summary is both the file a
+Everything lands in a fragments/ folder under the output folder: one GenBank map
+per sequence, called <name>.gb, plus summary.csv. That summary is both the file a
 synthesis order is placed from and the input to ytk-clone. Use --format dna for
-SnapGene files instead.
+SnapGene files instead. Without --outdir the results go in a ytk_output/ folder
+beside the input.
 
 Input sequences are never changed. If one does not fit the type asked for,
 the script says so and stops.
@@ -26,13 +29,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "lib"))
 import cds        # noqa: E402
-import enzymes    # noqa: E402
 import flanks     # noqa: E402
 import notes      # noqa: E402
+import output     # noqa: E402
 import sequences  # noqa: E402
 import snapgene as sg
 
 OVERHANG_TABLE = ROOT / "data" / "ytk_overhangs.tsv"
+
+# The only part type this plugin builds: a whole coding sequence. It is a
+# default and not a guess - it is printed on every run, and --type overrides it.
+PART_TYPE = "3"
 
 INSERT_COLOR = "#66ccff"
 
@@ -44,11 +51,15 @@ def read_overhangs():
 
 
 def check(name, sequence, adapters, allow_no_stop):
-    """Refuse a sequence that does not fit the part type. Returns warnings.
+    """Refuse a sequence that does not fit the part type.
 
     A hard stop is for a design that would be wrong DNA: a junction that does
     not form, a reading frame that does not close, a stop codon in the middle
-    of a protein fusion. Everything else is reported and left alone.
+    of a protein fusion.
+
+    A cut site inside the sequence is not checked here. It is measured once, by
+    notes.for_order, and printed from the notes column, so the screen and the
+    order file cannot disagree about it.
     """
     if not re.fullmatch(r"[ACGT]+", sequence):
         sys.exit(f"{name}: the sequence holds something other than A, C, G and T")
@@ -70,16 +81,6 @@ def check(name, sequence, adapters, allow_no_stop):
         sys.exit(f"{name}: type {part_type} has no stop codon at the end, and the "
                  f"flank does not add one. Pass --no-stop-codon {name} if that is "
                  "intended")
-
-    return [f"holds a {enzyme} site inside the sequence"
-            for enzyme in enzymes.in_sequence(sequence)]
-
-
-def flank(sequence, adapters):
-    """The sequence to order, with both handles at full length."""
-    return flanks.flank(sequence, adapters)
-
-
 
 
 def write_labelled_map(path, name, sequence, ordered, adapters):
@@ -106,19 +107,20 @@ def write_labelled_map(path, name, sequence, ordered, adapters):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sequence", help="one DNA sequence")
-    parser.add_argument("--input", help=".fa, .fasta, .csv, .gb, .gbk or .dna")
+    parser.add_argument("--input", required=True,
+                        help=".fa, .fasta, .csv, .gb, .gbk or .dna")
     parser.add_argument("--feature", help="which feature holds the CDS, for map files")
-    parser.add_argument("--type", required=True, help="YTK part type, for example 3")
-    parser.add_argument("--name", help="name for a single sequence")
+    parser.add_argument("--type", default=PART_TYPE,
+                       help=f"YTK part type (default {PART_TYPE}, the only type "
+                            f"this plugin builds)")
     parser.add_argument("--format", default="genbank", choices=["genbank", "dna"],
                        help="format of the per-fragment maps (default genbank, "
                             "which SnapGene also opens)")
-    parser.add_argument("--outdir", default=".", help="where to write the output")
+    parser.add_argument("--outdir",
+                        help="where to write the output "
+                             "(default: a ytk_output/ folder beside the input)")
     parser.add_argument("--no-stop-codon", nargs="+", default=[], metavar="NAME",
                        help="names of sequences that end without a stop codon on purpose")
-    parser.add_argument("--approve-unsure", action="store_true",
-                       help="go ahead with a part type whose overhangs are not confirmed")
     args = parser.parse_args()
 
     table = read_overhangs()
@@ -126,21 +128,12 @@ def main():
         sys.exit(f"unknown part type {args.type}. Known types: {', '.join(table)}")
     adapters = table[args.type]
 
-    if adapters["unsure"] and not args.approve_unsure:
-        sys.exit(f"type {args.type}: {adapters['unsure']}\n"
-                 "Nothing was written. Pass --approve-unsure to go ahead anyway.")
-
-    if args.input:
-        try:
-            parts = [(name, seq.upper(), plasmid) for name, seq, plasmid
-                     in sequences.read(Path(args.input), args.feature)]
-        except sequences.AmbiguousCDS as ambiguous:
-            sys.exit(f"{ambiguous}\n\n{ambiguous.table()}\n\n"
-                     "Say which one with --feature NAME.")
-    elif args.name:
-        parts = [(args.name, args.sequence.upper(), None)]
-    else:
-        sys.exit("--name is needed, so the output file can be named after the sequence")
+    try:
+        parts = [(name, seq.upper(), plasmid) for name, seq, plasmid
+                 in sequences.read(Path(args.input), args.feature)]
+    except sequences.AmbiguousCDS as ambiguous:
+        sys.exit(f"{ambiguous}\n\n{ambiguous.table()}\n\n"
+                 "Say which one with --feature NAME.")
 
     # A typo here would otherwise fail with a message telling the person to
     # pass a flag they did pass.
@@ -152,23 +145,24 @@ def main():
     # The notes column of the input, when there is one. cds_qc writes it when it
     # removes a cut site, and it rides on the same row as the sequence it
     # describes, so a note cannot end up against the wrong gene.
-    inherited = sg.read_column(args.input, sg.NOTES_HEADERS) if args.input else {}
+    inherited = sg.read_column(args.input, sg.NOTES_HEADERS)
 
     rows = []
     for name, sequence, plasmid in parts:
-        warnings = check(name, sequence, adapters, name in args.no_stop_codon)
-        rows.append((name, sequence, flank(sequence, adapters), warnings, plasmid,
+        check(name, sequence, adapters, name in args.no_stop_codon)
+        rows.append((name, sequence, flanks.flank(sequence, adapters), plasmid,
                      notes.for_order(sequence, inherited.get(name, ""))))
 
-    fragments = Path(args.outdir) / "fragments"
+    fragments = output.folder(args.outdir, args.input) / "fragments"
     fragments.mkdir(parents=True, exist_ok=True)
     suffix = ".gb" if args.format == "genbank" else ".dna"
 
-    for name, sequence, ordered, warnings, _, note in rows:
+    for name, sequence, ordered, _, note in rows:
         print(f"\n{name}  type {args.type}  {len(sequence)} bp in, {len(ordered)} bp to order")
         print(ordered)
-        for warning in warnings:
-            print(f"  note: {name} {warning}")
+        # The note as it will appear in the order file, word for word, so what
+        # is on screen and what gets ordered cannot drift apart.
+        print(f"  note: {note}")
         path = fragments / f"{name}{suffix}"
         write_labelled_map(path, name, sequence, ordered, adapters)
         print(f"  wrote {path}")
@@ -180,7 +174,7 @@ def main():
     with open(summary, "w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(["name", "part_type", "plasmid", "sequence", "notes"])
-        for name, _, ordered, _, plasmid, note in rows:
+        for name, _, ordered, plasmid, note in rows:
             writer.writerow([name, args.type, plasmid or "", ordered, note])
     print(f"\nwrote {summary}")
 

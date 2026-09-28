@@ -17,15 +17,20 @@ plasmid.
 ## Run it
 
 ```bash
-python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS --outdir OUTDIR
+python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS
 ```
 
-That clones into pYTK001 with BsmBI, which is the YTK entry reaction.
+`FRAGMENTS` is `fragments/summary.csv` from **ytk-add-overhangs**. That clones
+into pYTK001 with BsmBI, which is the YTK entry reaction.
+
+Without `--outdir` the maps go in a `ytk_output/` folder beside the input, and
+the script prints where. An input that is already inside one goes back into it,
+so chaining the steps by hand does not bury a folder in the last one.
 
 Any other vector, any other Type IIS enzyme:
 
 ```bash
-python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS --outdir OUTDIR \
+python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS \
     --backbone my_vector.gb --enzyme BsaI
 ```
 
@@ -43,7 +48,7 @@ One folder, named after the backbone actually cloned into, so a run against
 another vector cannot be mistaken for an entry-vector run:
 
 ```
-OUTDIR/pYTK001_maps/
+pYTK001_maps/
   summary.csv    name, part_type, plasmid, notes
   <plasmid>.gb   one circular map per plasmid, not yet labelled
 ```
@@ -55,7 +60,7 @@ optional: a bare FASTA of fragments still clones, it just leaves them blank.
 `--format dna` writes SnapGene `.dna` instead of GenBank. The plasmid is
 identical either way; only the file format changes.
 
-So the next step can just take `OUTDIR/pYTK001_maps/*.gb`.
+So the next step can just take `pYTK001_maps/*.gb` from the output folder.
 
 The linear post-digest pieces are not written. Nothing downstream reads them,
 and the fragment maps from `ytk-add-overhangs` are the ones worth keeping.

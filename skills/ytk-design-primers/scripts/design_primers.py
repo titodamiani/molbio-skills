@@ -3,10 +3,10 @@
 The product of the PCR is already YTK-compatible, so it drops straight into the
 pYTK001 entry vector in a BsmBI Golden Gate reaction.
 
-    python3 design_primers.py --input genes.csv --outdir out/
-    python3 design_primers.py --sequence ATGAAA...TAA --name my_gene
+    python3 design_primers.py --input genes.csv
 
 One CSV comes out, two rows per sequence. Input sequences are never changed.
+Without --outdir it goes in a ytk_output/ folder beside the input.
 """
 import argparse
 import csv
@@ -17,12 +17,18 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "lib"))
 import cds             # noqa: E402
 import flanks          # noqa: E402
+import output          # noqa: E402
 import primers         # noqa: E402
 import report          # noqa: E402
 import sequences       # noqa: E402
 
 OVERHANG_TABLE = ROOT / "data" / "ytk_overhangs.tsv"
 PART_TYPE = "3"
+
+# The spare bases at the outer end of each primer. Four is the shortest that
+# still leaves BsmBI room to cut, and nothing has ever wanted a different
+# number, so it is a constant rather than a flag.
+PAD = flanks.MIN_PAD
 
 
 def adapters():
@@ -34,10 +40,8 @@ def adapters():
     sys.exit(f"{OVERHANG_TABLE}: no row for part type {PART_TYPE}")
 
 
-def collect(inputs, one_sequence, one_name, feature):
-    """Sequences from wherever they were given, as (name, sequence)."""
-    if one_sequence:
-        return [(one_name or "sequence", one_sequence.upper())]
+def collect(inputs, feature):
+    """Sequences from every input file, as (name, sequence)."""
     found = []
     for path in inputs:
         try:
@@ -50,25 +54,16 @@ def collect(inputs, one_sequence, one_name, feature):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", nargs="*", default=[],
+    parser.add_argument("--input", nargs="+", required=True,
                         help=".fa, .fasta, .csv, .gb, .gbk or .dna")
-    parser.add_argument("--sequence", help="one coding sequence, on the command line")
-    parser.add_argument("--name", help="what to call a sequence given with --sequence")
     parser.add_argument("--feature", help="which feature holds the CDS, for map files")
-    parser.add_argument("--pad", type=int, default=flanks.MIN_PAD,
-                        help=f"spare bases at the outer end "
-                             f"({flanks.MIN_PAD}-{flanks.FULL_PAD})")
-    parser.add_argument("--outdir", default=".")
+    parser.add_argument("--outdir",
+                        help="where to write primers.csv "
+                             "(default: a ytk_output/ folder beside the input)")
     args = parser.parse_args()
 
-    if not args.input and not args.sequence:
-        parser.error("give --input or --sequence")
-    if not flanks.MIN_PAD <= args.pad <= flanks.FULL_PAD:
-        parser.error(f"--pad must be {flanks.MIN_PAD} to {flanks.FULL_PAD}; "
-                     f"below {flanks.MIN_PAD} leaves BsmBI no room to cut")
-
     adapter_row = adapters()
-    found = collect(args.input, args.sequence, args.name, args.feature)
+    found = collect(args.input, args.feature)
     log = report.Report()
 
     rows = []
@@ -78,7 +73,7 @@ def main():
             for fault in faults:
                 log.block(name, f"not a Type 3 CDS: it {fault}")
             continue
-        designed = primers.design(name, sequence, adapter_row, args.pad)
+        designed = primers.design(name, sequence, adapter_row, PAD)
         if "blocked" in designed:
             log.block(name, designed["blocked"])
             continue
@@ -86,9 +81,7 @@ def main():
         rows += primers.rows_for_csv(designed)
 
     if rows:
-        outdir = Path(args.outdir)
-        outdir.mkdir(parents=True, exist_ok=True)
-        out = outdir / "primers.csv"
+        out = output.folder(args.outdir, args.input[0]) / "primers.csv"
         with open(out, "w", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=primers.CSV_COLUMNS)
             writer.writeheader()

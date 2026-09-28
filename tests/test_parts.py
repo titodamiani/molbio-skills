@@ -86,7 +86,12 @@ class TestTheOverhangTable(unittest.TestCase):
 
     def test_nothing_is_flagged_unsure_any_more(self):
         """Types 8 and 8a were marked unverified. The paper and pYTK083-085 and
-        pYTK089-091 confirm both."""
+        pYTK089-091 confirm both.
+
+        No code reads this column any more - see NOTES.md. This test is what
+        keeps the verification on record, so refilling the cell fails here
+        rather than being silently ignored at run time.
+        """
         self.assertEqual([row["part_type"] for row in table("ytk_overhangs.tsv")
                           if row.get("unsure")], [])
 
