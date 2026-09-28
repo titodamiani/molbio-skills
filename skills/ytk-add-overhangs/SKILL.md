@@ -12,44 +12,45 @@ It does not build a plasmid map. Use **ytk-clone** for that.
 
 ## What the person must tell you
 
-Three things are required. Never guess any of them.
+**One thing is required: the sequences**, as a FASTA or CSV file. Everything
+else has a default that is right nearly always.
 
-1. **The sequence.** Plain DNA, or a FASTA or CSV file.
-2. **The part type.** For example type 3 for a coding sequence. The overhang
-   pair depends only on this. The sequence does not say what type it is, so a
-   guess here silently puts the part in the wrong slot of an assembly.
-3. **The name** of the sequence, for example `Pi_fim_NCS_c1`. The output file
-   is named after it.
+Ask for these only if they matter to the person:
 
-Ask for these two as well, if they matter to the person:
+- **Where to save** the output. Without `--outdir` it goes in a `ytk_output/`
+  folder beside the input file, and the script prints where.
+- **A different part type.** `--type` defaults to **3**, a whole coding
+  sequence, which is the only type this plugin builds. The default is printed
+  on every run.
+- **A different format.** Maps are GenBank, which SnapGene also opens.
+  `--format dna` writes SnapGene `.dna` instead. The synthesis order is always
+  written as CSV either way.
 
-4. **Where to save** the output. The default is the folder you are in.
-5. **A different format.** Maps are GenBank, which SnapGene also opens.
-   `--format dna` writes SnapGene `.dna` instead. The synthesis order is always
-   written as CSV either way.
-
-If the part type is missing, ask. Do not read it off a file name, a gene name
-or the fact that a sequence starts with ATG.
+**A part type is still never read off the DNA.** Type 3 against 3a against 3b
+is a design decision. If someone says they want a fusion half, pass `--type`
+yourself - do not infer it from a file name, a gene name, or the fact that a
+sequence starts with ATG.
 
 ## Run it
 
 ```bash
-python3 "$CLAUDE_SKILL_DIR/scripts/add_overhangs.py" --sequence ATGGCG... --type 3 --name Pi_fim_NCS_c1
+python3 "$CLAUDE_SKILL_DIR/scripts/add_overhangs.py" --input parts.csv
 ```
 
-For a batch:
+One sequence instead of a file: write it to a one-line CSV first, so there is
+only ever one input path to reason about.
 
 ```bash
-python3 "$CLAUDE_SKILL_DIR/scripts/add_overhangs.py" --input parts.csv --type 3 --outdir out/
+printf 'name,sequence\nPi_fim_NCS_c1,ATGGCG...TAA\n' > parts.csv
 ```
 
 `--input` takes the same files as the other skills: FASTA (`.fa`, `.fasta`)
-or CSV with a name column and a sequence column. One `--type` applies to
+or CSV with a name column and a sequence column. One part type applies to
 every row, so keep one file per part type.
 
 ## Output
 
-Everything goes in a `fragments/` folder under `--outdir`:
+Everything goes in a `fragments/` folder under the output folder:
 
 ```
 fragments/
@@ -114,13 +115,12 @@ nothing. Ask the person whether that is intended. If it is, name that sequence
 with `--no-stop-codon`:
 
 ```bash
-python3 "$CLAUDE_SKILL_DIR/scripts/add_overhangs.py" --input parts.csv --type 3 --no-stop-codon Pi_fim_NCS_c1 Pi_fim_OMT_c1
+python3 "$CLAUDE_SKILL_DIR/scripts/add_overhangs.py" --input parts.csv --no-stop-codon Pi_fim_NCS_c1 Pi_fim_OMT_c1
 ```
 
 The flag names the sequences that are exempt, one or more of them. Every other
-sequence in the same run still has to carry a stop codon. For a single
-sequence the name is whatever `--name` says, so it reads
-`--name demo --no-stop-codon demo`.
+sequence in the same run still has to carry a stop codon. The name is the one in
+the `name` column of the input.
 
 A name that is not in the input stops the run, so a typo cannot pass for an
 exemption.
@@ -138,28 +138,18 @@ The script stops, and writes nothing, when:
 - a coding sequence has no stop codon at the end, and was not named with
   `--no-stop-codon`
 
-It warns, and carries on, when:
+It notes, and carries on, when:
 
 - the sequence holds a BsmBI or BsaI site inside it
 
-Pass that on. An internal site does not block the ordering, and **ytk-clone**
-handles it, but that part cannot be re-cut with the same enzyme later at the
-bench.
+That goes in the `notes` column, and the same words are printed under each
+sequence as it is written, so what is on screen and what gets ordered cannot
+drift apart. Pass it on. An internal site does not block the ordering, and
+**ytk-clone** handles it, but that part cannot be re-cut with the same enzyme
+later at the bench.
 
 Never remove an internal site with a silent codon change. That is the
 person's decision, not yours.
-
-## Part types we are not sure about
-
-Some rows of `data/ytk_overhangs.tsv` carry a note in the `unsure` column. For
-those part types the script prints the note, stops, and writes nothing.
-
-Show the message to the person and ask whether to go ahead. Only if they say
-yes, run it again with `--approve-unsure`. Never add that flag on your own
-initiative — the whole point of the gate is that a person decides.
-
-When the answer is confirmed, clearing that cell in the table turns the gate
-off. No code changes.
 
 ## After this
 

@@ -38,15 +38,6 @@ CIRCULAR = 0x01
 DOUBLE_STRANDED = 0x02
 
 
-def require(package, module=None):
-    """Stop with the pip command when a package is missing.
-
-    Nothing is installed here, because pip would fetch the newest release
-    rather than the version pinned in requirements.txt.
-    """
-    deps.require(module or package)
-
-
 # --- reading the gene file ---------------------------------------------
 
 NAME_HEADERS = {"name", "gene", "id", "gene_name", "gene name"}
@@ -75,7 +66,7 @@ def read_genes(path):
     suffix = path.suffix.lower()
 
     if suffix in (".fa", ".fasta"):
-        require("biopython", "Bio")
+        deps.require("Bio")
         from Bio import SeqIO
         genes = [(r.id, str(r.seq).upper(), None) for r in SeqIO.parse(path, "fasta")]
     elif suffix == ".csv":
@@ -318,7 +309,7 @@ def write_genbank(path, sequence, circular, notes_type="Natural", description=""
     accepted and ignored. That keeps the signature the same as write_dna, which
     is what lets write_map forward to either one.
     """
-    require("biopython", "Bio")
+    deps.require("Bio")
     from Bio import SeqIO
     from Bio.Seq import Seq
     from Bio.SeqRecord import SeqRecord
@@ -341,7 +332,7 @@ def read_genbank(path):
     the format assumes double-stranded DNA. Anything reporting that check has
     to say it did not really run.
     """
-    require("biopython", "Bio")
+    deps.require("Bio")
     from Bio import SeqIO
 
     record = SeqIO.read(str(path), "genbank")
@@ -424,8 +415,3 @@ def rotation_of(reference, other):
     doubled = other.upper() + other.upper()
     at = doubled.find(reference.upper())
     return at if 0 <= at < len(other) else None
-
-
-def same_circle(a, b):
-    """True when two sequences describe the same circular DNA."""
-    return rotation_of(a, b) is not None

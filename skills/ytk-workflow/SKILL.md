@@ -25,10 +25,22 @@ Ask for, and never guess:
 - **whether to remove internal BsmBI/BsaI sites.** This is the one question that
   changes the DNA. Never assume it.
 
-Do not ask about the part type: it is always 3. Do not ask about formats: maps
-are GenBank unless they ask for SnapGene `.dna`. Plasmid names come from a
-`plasmid` column, with `<gene>_pYTK001` as the fallback, so there is nothing to
-ask there either.
+Everything else has a default that is right nearly always, so do not ask about
+it. The part type is always 3. Maps are GenBank unless they ask for SnapGene
+`.dna`. Plasmid names come from a `plasmid` column, with `<gene>_pYTK001` as the
+fallback.
+
+**If they do not say where to put the output**, do not ask either. Leave
+`--outdir` off and every step writes to a `ytk_output/` folder beside the input
+file, printing where it went. Then tell them the path in your report.
+
+**If they paste sequences into the chat instead of giving a file**, write them
+to a CSV first and treat that as the input. Everything below then works
+unchanged:
+
+```
+printf 'name,sequence\nmy_gene,ATGAAA...TAA\n' > genes.csv
+```
 
 ## The prompt to hand out
 
@@ -50,6 +62,7 @@ Always this, whatever the input was:
 ```
 OUTPUT/
   input_genes.csv        a copy of the input
+  corrected_genes.csv    only when sites were removed
   primers.csv            two rows per gene, one per oligo
   fragments/
     summary.csv          the synthesis order
@@ -85,20 +98,20 @@ python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-cds-qc/scripts/cds_qc.py" \
     --input genes.csv --remove-sites --outdir "$OUT"
 ```
 
-That writes `$OUT/corrected.csv`, with a `notes` column saying what was cleared
-out of each gene. **Every later step then reads `corrected.csv`, not
-`genes.csv`.** Steps 3, 5 and 6 included: primers designed from the original
+That writes `$OUT/corrected_genes.csv`, with a `notes` column saying what was
+cleared out of each gene. **Every later step then reads `corrected_genes.csv`,
+not `genes.csv`.** Steps 3, 5 and 6 included: primers designed from the original
 sequence would not match the corrected gene, and a map verified against the old
 sequence would report a difference that is not there.
 
-Below, `GENES` means `genes.csv` normally and `$OUT/corrected.csv` when the
-removal step ran.
+Below, `GENES` means `genes.csv` normally and `$OUT/corrected_genes.csv` when
+the removal step ran.
 
 **Step 2 — add the flanks.**
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-add-overhangs/scripts/add_overhangs.py" \
-    --input "$GENES" --type 3 --outdir "$OUT"
+    --input "$GENES" --outdir "$OUT"
 ```
 
 Writes `$OUT/fragments/`: one `<gene>.gb` per gene, plus `summary.csv`. That

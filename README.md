@@ -167,6 +167,7 @@ One folder, laid out the same way every time:
 ```
 out/
   input_genes.csv        a copy of what you gave it
+  corrected_genes.csv    only when you asked for sites to be removed
   primers.csv            two rows per gene, one per oligo
   fragments/
     summary.csv          the synthesis order: name, part_type, plasmid, sequence, notes
@@ -179,13 +180,17 @@ out/
 The map folder is named after the backbone you actually cloned into, so a run
 against another vector cannot be mistaken for an entry-vector run.
 
+If you do not say where to put it, the folder is called `ytk_output/` and sits
+beside your input file. Every step prints the path it used.
+
 `fragments/summary.csv` is the file you place the synthesis order from. Its
 `notes` column says, per gene, what was cleared out of the CDS and what is still
 in it - for example `BsmBI site removed; BsaI site in the CDS`. The two are not
 exclusive: one enzyme can be swapped out while another stays, because no
 synonymous codon removes it. **The "still in it" half is always measured again on
 the sequence being ordered**, so a stale note can mislabel a safe fragment but
-can never hide a site.
+can never hide a site. Anything else you write in that cell is carried through
+word for word: editing it in Excel cannot turn it into an all-clear.
 
 Maps are GenBank by default, which SnapGene also opens. Add `--format dna` to
 `ytk-add-overhangs` and `ytk-clone` for SnapGene `.dna` files instead. The
@@ -193,7 +198,7 @@ plasmid is identical either way.
 
 **Your sequences are never changed unless you ask.** There is one exception, and
 you have to name it: `ytk-cds-qc --remove-sites` swaps a codon to remove an
-internal BsmBI or BsaI site. It writes `corrected.csv`, leaves yours alone, prints
+internal BsmBI or BsaI site. It writes `corrected_genes.csv`, leaves yours alone, prints
 every changed base, and refuses if the protein would change at all. On the two
 real genes in `tests/data/` it changes one base.
 

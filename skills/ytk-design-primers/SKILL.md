@@ -22,15 +22,14 @@ Never guess a sequence, and never change one.
 ## Run it
 
 ```
-python3 "$CLAUDE_SKILL_DIR/scripts/design_primers.py" \
-    --input genes.csv --outdir out/
+python3 "$CLAUDE_SKILL_DIR/scripts/design_primers.py" --input genes.csv
 ```
 
-One sequence instead of a file:
+One sequence instead of a file: write it to a one-line CSV first, so there is
+only ever one input path to reason about.
 
 ```
-python3 "$CLAUDE_SKILL_DIR/scripts/design_primers.py" \
-    --sequence ATGAAA...TAA --name my_gene --outdir out/
+printf 'name,sequence\nmy_gene,ATGAAA...TAA\n' > genes.csv
 ```
 
 Input can be `.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`.

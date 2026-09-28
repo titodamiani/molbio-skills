@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import deps
 import snapgene as sg
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -64,7 +65,7 @@ def read(path, feature=None):
 
 
 def _read_genbank(path, feature):
-    sg.require("biopython", "Bio")
+    deps.require("Bio")
     from Bio import SeqIO
 
     found = []
