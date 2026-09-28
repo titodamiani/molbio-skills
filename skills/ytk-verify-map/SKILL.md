@@ -1,6 +1,6 @@
 ---
 name: ytk-verify-map
-description: Check SnapGene .dna files. Compares a map against a reference as a circle, so a different start point is not reported as a difference, and checks the reading frame, the linear or circular flag, the double-strand flag, and that the start of the map does not split the gene. Use this whenever someone wants to verify, compare or sanity-check plasmid maps or .dna files, asks whether a generated map matches one made by hand, asks why two maps of the same plasmid look different, or says a file opens oddly in SnapGene.
+description: Check finished plasmid map files - SnapGene .dna or GenBank. Compares a map against a reference as a circle, so a different start point is not reported as a difference, and checks the reading frame, the linear or circular flag, the double-strand flag, and that the start of the map does not split the gene. Use this whenever someone wants to verify, compare or sanity-check plasmid maps or .dna files, asks whether a generated map matches one made by hand, asks why two maps of the same plasmid look different, or says a file opens oddly in SnapGene.
 ---
 
 # Check plasmid files
@@ -12,17 +12,18 @@ This skill checks `.dna` files and prints one line per check.
 Check a file on its own:
 
 ```bash
-python3 scripts/verify_map.py FILE.dna --genes GENES
+python3 "$CLAUDE_SKILL_DIR/scripts/verify_map.py" FILE.dna --genes GENES
 ```
 
 Compare one file against a reference:
 
 ```bash
-python3 scripts/verify_map.py FILE.dna --reference REFERENCE.dna --genes GENES
+python3 "$CLAUDE_SKILL_DIR/scripts/verify_map.py" FILE.dna --reference REFERENCE.dna --genes GENES
 ```
 
-`scripts/verify_map.py` sits in this skill's own folder. `--reference` takes one file
-at a time. Exit code 1 means something failed.
+`$CLAUDE_SKILL_DIR` is this skill's own folder, so the command works from any
+directory. `--reference` takes one file at a time. A `.gb` or `.gbk` file is read
+as GenBank, a `.dna` as SnapGene. Exit code 1 means something failed.
 
 ## Compare circles, not text
 
@@ -34,15 +35,17 @@ So the check turns one sequence until it lines up with the other. The output
 says either `matches the reference exactly` or `matches the reference, turned
 by N bp`. Both mean the DNA is the same.
 
-This comes up often with files made by hand in SnapGene, because a person
-picks whatever start point the software offered that day.
+This comes up often with files made by hand in SnapGene, because the person
+picks a different start point each time.
 
 ## What gets checked
 
 Every file:
 
 - the double-strand bit is set — with it off, SnapGene treats the file as a
-  single strand and hides the Enzymes tab
+  single strand and hides the Enzymes tab. **A GenBank file has no such flag**,
+  because the format assumes double-stranded DNA, so for a `.gb` this check
+  always passes and tells you nothing. Say so rather than reporting it as a pass.
 - the length
 
 Circular files, with `--genes`:
@@ -61,9 +64,8 @@ With `--reference`, also whether the two describe the same DNA.
 ## Reading the result
 
 A failure is a real problem and is worth stopping for. Report exactly which
-check failed and for which file. Do not paper over it, and do not edit
-anyone's sequence to make a check pass — the check is there to catch the
-mistake, not to be satisfied.
+check failed and for which file. Do not hide it. Do not edit anyone's sequence
+to make a check pass. The check exists to find the mistake.
 
 A `turned by N bp` line is not a failure. Say so plainly if someone asks,
 because it reads like one.

@@ -10,7 +10,7 @@ overhang pair that fixes where the part sits in a YTK assembly.
 The part type must be given. It is never guessed from the sequence.
 
 One SnapGene file is written per sequence, called <name>_oh.dna. Use
---format fasta or --format csv for plain text instead.
+--format genbank for GenBank. --format fasta or --format csv for plain text.
 
 Input sequences are never changed. If one does not fit the type asked for,
 the script says so and stops.
@@ -77,8 +77,8 @@ def flank(sequence, adapters):
     return flanks.flank(sequence, adapters)
 
 
-def write_snapgene(path, name, sequence, ordered, adapters):
-    """Write the flanked sequence as a linear SnapGene file.
+def write_labelled_map(path, name, sequence, ordered, adapters):
+    """Write the flanked sequence as a linear map, SnapGene .dna or GenBank.
 
     Only the sequence itself is labelled. The cut sites are left off on
     purpose: SnapGene shows those live under Enzymes, so a fixed label there
@@ -94,7 +94,7 @@ def write_snapgene(path, name, sequence, ordered, adapters):
         "color": INSERT_COLOR,
         "wrap_end": 0,
     }
-    sg.write_dna(path, ordered, circular=False, notes_type="Synthetic",
+    sg.write_map(path, ordered, circular=False, notes_type="Synthetic",
                  description=f"YTK type {adapters['part_type']} part, ready to order.",
                  features=[feature])
 
@@ -106,8 +106,9 @@ def main():
     parser.add_argument("--feature", help="which feature holds the CDS, for map files")
     parser.add_argument("--type", required=True, help="YTK part type, for example 3")
     parser.add_argument("--name", help="name for a single sequence")
-    parser.add_argument("--format", default="dna", choices=["dna", "fasta", "csv"],
-                       help="output file format (default dna)")
+    parser.add_argument("--format", default="dna",
+                       choices=["dna", "genbank", "fasta", "csv"],
+                       help="output file format (default dna, for SnapGene)")
     parser.add_argument("--outdir", default=".", help="where to write the output")
     parser.add_argument("--no-stop-codon", nargs="+", default=[], metavar="NAME",
                        help="names of sequences that end without a stop codon on purpose")
@@ -157,9 +158,10 @@ def main():
         for warning in warnings:
             print(f"  note: {name} {warning}")
 
-        if args.format == "dna":
-            path = outdir / f"{name}_oh.dna"
-            write_snapgene(path, name, sequence, ordered, adapters)
+        if args.format in ("dna", "genbank"):
+            suffix = ".gb" if args.format == "genbank" else ".dna"
+            path = outdir / f"{name}_oh{suffix}"
+            write_labelled_map(path, name, sequence, ordered, adapters)
         elif args.format == "fasta":
             path = outdir / f"{name}_oh.fasta"
             path.write_text(f">{name}_oh YTK type {args.type}\n{ordered}\n")

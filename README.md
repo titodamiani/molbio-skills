@@ -1,21 +1,19 @@
-# molbio-skills
+# ytk-skills
 
-Does the MoClo Yeast Toolkit cloning work you would otherwise do by hand in
-SnapGene and Excel.
+Does the MoClo Yeast Toolkit cloning work you would otherwise do by hand.
 
-Give it a coding sequence, or a hundred. It checks them, designs the PCR primers,
-works out what each finished plasmid looks like, and writes labelled SnapGene
-`.dna` files.
-
-It only knows the Yeast Toolkit. That is on purpose.
+It works on one coding sequence or on a batch of them. It checks that each one is
+a valid Type 3 coding sequence and has no internal BsmBI or BsaI site, designs the
+PCR primers, simulates cloning the flanked sequence into a backbone, and writes
+labelled plasmid maps, as SnapGene `.dna` or GenBank.
 
 ## Install
 
 In Claude Code:
 
 ```
-/plugin marketplace add titodamiani/molbio-skills
-/plugin install molbio-skills
+/plugin marketplace add titodamiani/ytk-skills
+/plugin install ytk-skills
 ```
 
 Then install the Python packages once:
@@ -27,7 +25,7 @@ python3 -m pip install -r requirements.txt
 The skills do not install anything themselves. If something is missing they print
 that exact line and stop, so the pinned versions are the versions you get.
 
-## Scope: Type 3 only, and that is deliberate
+## Scope: part Type 3 only
 
 One part type is supported: **Type 3**, a whole coding sequence that starts with
 `ATG` and ends with a stop codon.
@@ -39,7 +37,7 @@ downstream would notice.
 
 ## No tags on these parts
 
-Worth knowing before you build a freezer full of them.
+Read this before you build a set of these parts.
 
 A part built here keeps the CDS's own stop codon, so:
 
@@ -59,7 +57,7 @@ no sequence editing either - you just supply a CDS without a stop codon.
 
 ## The seven skills
 
-Each one works on **one sequence or a batch**. Just ask.
+Each one takes one sequence or a batch.
 
 **`ytk-cds-qc`** - are these valid Type 3 coding sequences, and do any hide a
 BsmBI or BsaI site?
@@ -87,11 +85,11 @@ map. This is what SnapGene's cloning simulation does.
 
 > Clone these into `pRS416.gb` with BsaI instead.
 
-**`ytk-annotate-map`** - puts the part labels on a `.dna` file.
+**`ytk-annotate-map`** - puts the part labels on a map file, `.dna` or GenBank.
 
 > This plasmid map opens blank in SnapGene. Can you label it?
 
-**`ytk-verify-map`** - checks a `.dna` file, on its own or against a reference.
+**`ytk-verify-map`** - checks a map file, on its own or against a reference.
 
 > Check the maps in `out/maps/` against my hand-made ones in `refs/`.
 
@@ -117,11 +115,11 @@ has room to cut near the end of a linear fragment.
 - **`ytk-add-overhangs` keeps all 10.** That is the fragment you order.
 - **`ytk-design-primers` trims to 4.** Shorter primers cost less.
 
-**This is not a bug, and it changes nothing.** The pad sits *outside* both BsmBI
-sites, so it is cut off and thrown away. A fragment with a 10-base pad and a PCR
-product with a 4-base pad give the identical plasmid. There is a test for it.
+**This is not a bug. Both give the identical plasmid.** The pad sits *outside*
+both BsmBI sites, so it is cut off and thrown away. A fragment with a 10-base pad
+and a PCR product with a 4-base pad give the same part. There is a test for it.
 
-The pad never goes below 4, or BsmBI loses its footing.
+The pad is never below 4 bases. BsmBI needs that much room to cut.
 
 ## What you give it
 
@@ -137,7 +135,7 @@ Pi_fim_OMT_c1,ATGGTCTTA...,pTP0457
 - **name** - what the gene is called
 - **sequence** - the DNA
 - **plasmid** - what to call the finished plasmid. Optional, and carried all the
-  way through, because real plasmid numbers jump about.
+  way through, because real plasmid numbers are not in order.
 
 For a `.gb` or `.dna` map, the insert is picked out for you: resistance markers
 and origins are set aside first, by matching against the published parts and a
@@ -148,19 +146,23 @@ stops and lists them, and you say which.
 
 - `ytk_primers.csv` - two rows per gene, columns matching an oligo stock sheet
 - `ytk_order.csv` - the flanked sequences to order
-- `maps/` - one labelled circular `.dna` per plasmid
-- `fragments/` - one linear `.dna` per fragment
+- `maps/` - one labelled circular map per plasmid
+- `fragments/` - one linear map per fragment
+
+Maps are SnapGene `.dna` by default. Add `--format genbank` to `ytk-add-overhangs`
+and `ytk-clone` to get `.gb` files instead, for anyone who does not have SnapGene.
+The plasmid is identical either way.
 
 **Your sequences are never changed unless you ask.** There is one exception, and
 you have to name it: `ytk-cds-qc --remove-sites` swaps a codon to remove an
 internal BsmBI or BsaI site. It writes a new file, leaves yours alone, prints
-every changed base, and refuses if the protein would differ by one residue. On
-real genes it needs one base.
+every changed base, and refuses if the protein would change at all. On the two
+real genes in `tests/data/` it changes one base.
 
 ## When it stops and asks
 
 Not a valid Type 3 CDS. A BsmBI or BsaI site inside the sequence. A primer that
-would have to be longer than 50 bp. Cloning that does not work.
+would have to be longer than 50 bp. A cloning whose sticky ends do not match.
 
 **In a batch it never stops at the first problem.** Every skill collects the whole
 batch's problems, prints one table, and asks once.
@@ -193,17 +195,17 @@ The two paper PDFs are not committed - 9 MB, and the 1 KB the code needs is in
 ## Tests
 
 ```
-python3 tests/test_ytk.py       # cloning, writing .dna, annotation
+python3 tests/test_ytk.py       # cloning, writing .dna and GenBank, annotation
 python3 tests/test_primers.py   # the primer designer, vs 20 real primer pairs
 python3 tests/test_parts.py     # the data tables and the entry vector
 python3 tests/test_inputs.py    # the four formats, and asking once
 ```
 
 `tests/test_primers.py` measures against a real oligo sheet and gene list. Those
-hold unpublished sequences, so they are not in the repo: the tests that need them
-skip, loudly, when they are not on your machine.
+hold unpublished sequences, so they are not in the repo: those tests are skipped,
+with a message, when the files are not on your machine.
 
-`NOTES.md` has the things that would cost you a day to rediscover.
+`NOTES.md` records the facts that are hard to find again.
 
 ## Licence
 

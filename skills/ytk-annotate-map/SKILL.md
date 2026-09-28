@@ -1,6 +1,6 @@
 ---
 name: ytk-annotate-map
-description: Put labels on SnapGene .dna plasmid maps using the published MoClo Yeast Toolkit (YTK) parts table. Finds ColE1, CamR, the CamR promoter and terminator, any YTK part, and the cloned gene, then writes the features back into the file. Use this whenever someone wants features, labels or annotations added to a plasmid map, says a .dna file looks blank or empty in SnapGene, says the features are missing or wrong, or asks what is actually in a plasmid map.
+description: Put labels on plasmid map files - SnapGene .dna or GenBank - using the published MoClo Yeast Toolkit (YTK) parts table. Finds ColE1, CamR, the CamR promoter and terminator, any YTK part, and the cloned gene, then writes the features back into the file. Use this whenever someone wants features, labels or annotations added to a plasmid map, says a .dna file looks blank or empty in SnapGene, says the features are missing or wrong, or asks what is actually in a plasmid map.
 ---
 
 # Label a plasmid map
@@ -11,17 +11,21 @@ the file back with those parts labelled.
 ## Run it
 
 ```bash
-python3 scripts/annotate_map.py FILE.dna
+python3 "$CLAUDE_SKILL_DIR/scripts/annotate_map.py" FILE.dna
 ```
 
 Several files at once, and with the cloned genes labelled too:
 
 ```bash
-python3 scripts/annotate_map.py OUTDIR/*.dna --genes GENES
+python3 "$CLAUDE_SKILL_DIR/scripts/annotate_map.py" OUTDIR/*.dna --genes GENES
 ```
 
-`scripts/annotate_map.py` sits in this skill's own folder. It finds the shared
-parts table by itself, so it works wherever the plugin is installed.
+`$CLAUDE_SKILL_DIR` is this skill's own folder, so the command works from any
+directory. The script finds the shared parts table by itself.
+
+The file format is taken from the extension, and the file is written back in the
+same format. A `.gb` or `.gbk` is read and written as GenBank, a `.dna` as
+SnapGene. There is no flag to set.
 
 `--genes` takes the same FASTA or CSV file used to build the plasmids. Each
 gene in that file is searched for, and the one that is present gets its own
@@ -36,8 +40,7 @@ Synthetic Biology 2015).
 Never copy labels from another map file, even one that looks right. Map files
 carry mistakes. One known case: a `pYTK001.dna` in circulation says the ColE1
 origin covers the whole plasmid. It is 764 bp. Anything built on that file
-inherits the error, and it is hard to spot later because the label looks
-perfectly ordinary.
+inherits the error. The wrong label looks normal, so nobody notices it.
 
 ## How parts are found
 
@@ -51,9 +54,9 @@ single answer would be a guess.
 ## What is not labelled
 
 Cut sites and fusion scars are left off on purpose. SnapGene shows those live
-under Enzymes and Common Features. A fixed label for them would go stale as
-soon as anything changed, and a stale label is worse than none.
+under Enzymes and Common Features. A written-in label goes out of date as soon
+as the map changes, and a wrong label is worse than no label.
 
 ## After this
 
-Use the **ytk-qc** skill to check the results.
+Use **ytk-verify-map** to check the results.

@@ -1,6 +1,6 @@
 ---
 name: ytk-cds-qc
-description: Check a coding sequence, or a batch of them, before any MoClo Yeast Toolkit (YTK) cloning is designed. Confirms each one is a valid Type 3 CDS - starts with ATG, ends with a stop codon, a whole number of codons - and finds any BsmBI or BsaI site inside that would break the Golden Gate reaction. Use this whenever someone wants a sequence checked, screened or validated before cloning, asks whether a gene is suitable for YTK or Golden Gate, asks if a CDS has internal cut sites or restriction sites, or says something like "are these genes ok", "check these sequences first", or "will this clone".
+description: Check DNA sequences - one coding sequence or a batch of them - before any MoClo Yeast Toolkit (YTK) cloning is designed. Confirms each one is a valid Type 3 CDS - starts with ATG, ends with a stop codon, a whole number of codons - and finds any BsmBI or BsaI site inside that would break the Golden Gate reaction. Use this whenever someone wants a sequence checked, screened or validated before cloning, asks whether a gene is suitable for YTK or Golden Gate, asks if a CDS has internal cut sites or restriction sites, or says something like "are these genes ok", "check these sequences first", or "will this clone". For a finished plasmid map file use ytk-verify-map instead. For the whole job at once, use ytk-workflow.
 ---
 
 # Check a coding sequence
@@ -18,13 +18,13 @@ This checks **sequences**. To check a finished `.dna` plasmid map instead, use
 ## Run it
 
 ```
-python3 skills/ytk-cds-qc/scripts/cds_qc.py --input genes.csv
+python3 "$CLAUDE_SKILL_DIR/scripts/cds_qc.py" --input genes.csv
 ```
 
 One sequence instead of a file:
 
 ```
-python3 skills/ytk-cds-qc/scripts/cds_qc.py --sequence ATGAAA...TAA --name my_gene
+python3 "$CLAUDE_SKILL_DIR/scripts/cds_qc.py" --sequence ATGAAA...TAA --name my_gene
 ```
 
 Input can be `.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`. For a map file,
@@ -54,7 +54,7 @@ go.
 If they do ask, there is a flag for it:
 
 ```
-python3 skills/ytk-cds-qc/scripts/cds_qc.py \
+python3 "$CLAUDE_SKILL_DIR/scripts/cds_qc.py" \
     --input genes.csv --remove-sites --outdir fixed/
 ```
 
@@ -62,15 +62,16 @@ It swaps one codon for a different codon of the same amino acid, so the protein
 is unchanged. On the two real genes in `tests/data/` this needs **one base each**,
 both at the third position of a codon where the genetic code is redundant.
 
-Safeguards, and none of them is optional:
+Safeguards. None of them is optional:
 
 - **The input file is never touched.** A new `fixed/corrected.fasta` is written.
 - **Every changed base is printed** with its position, its codon number, the old
   and new base, and the amino acid.
-- **The protein is translated before and after and compared.** If it differs by
-  one residue, nothing is kept and it raises.
+- **The protein is translated before and after and compared.** If the protein
+  changes at all, nothing is kept and the run stops.
 - **The start codon and the stop codon are never swapped.**
-- If no synonymous codon removes a site, it says so and does not pretend.
+- If no synonymous codon removes a site, it says so, and leaves the sequence
+  alone.
 
 Show the person the change table. Never apply this flag on your own initiative,
 and never to get past a failing check.
@@ -85,7 +86,7 @@ report it.
 
 Reported as a warning, not a failure. It usually means one of two things: the
 reading frame is wrong, or the sequence is not the coding sequence it was
-thought to be. Worth saying out loud before anyone orders anything.
+thought to be. Say this before anyone orders DNA.
 
 ## After this
 

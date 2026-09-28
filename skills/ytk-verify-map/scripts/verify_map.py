@@ -1,4 +1,4 @@
-"""Check SnapGene .dna files made by this plugin.
+"""Check plasmid map files made by this plugin, SnapGene .dna or GenBank.
 
     python3 qc.py out/pTP416.dna --reference refs/pTP416.dna
     python3 qc.py out/*.dna --genes genes.fasta
@@ -27,7 +27,7 @@ STOP_CODONS = ("TAA", "TAG", "TGA")
 
 def check_file(path, reference=None, genes=()):
     """Run every check on one file. Returns a list of (passed, message)."""
-    record = sg.read_dna(path)
+    record = sg.read_map(path)
     sequence = record["sequence"]
     results = [
         (record["double_stranded"], "double strand bit is set"),
@@ -35,7 +35,7 @@ def check_file(path, reference=None, genes=()):
     ]
 
     if reference:
-        wanted = sg.read_dna(reference)["sequence"]
+        wanted = sg.read_map(reference)["sequence"]
         if record["circular"]:
             turn = sg.rotation_of(wanted, sequence)
             if turn is None:
@@ -76,8 +76,8 @@ def check_file(path, reference=None, genes=()):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("files", nargs="+", help=".dna files to check")
-    ap.add_argument("--reference", help="a hand-made .dna file to compare against")
+    ap.add_argument("files", nargs="+", help="map files to check (.dna, .gb, .gbk)")
+    ap.add_argument("--reference", help="a hand-made map file to compare against")
     ap.add_argument("--genes", help="FASTA or CSV file of the cloned genes")
     args = ap.parse_args()
 

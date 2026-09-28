@@ -1,6 +1,6 @@
 ---
 name: ytk-design-primers
-description: Design PCR primers that add the MoClo Yeast Toolkit (YTK) Golden Gate flanks to a coding sequence, so the product amplified from cDNA is already YTK-compatible and drops straight into the pYTK001 entry vector. Works out the binding region, Tm, GC and the annealing temperature, and writes one CSV to order from. Use this whenever someone wants primers, oligos, a primer pair, something to order from a supplier, or asks how to amplify a gene for YTK cloning, Golden Gate or the entry vector - including when they only say "design primers for these genes", "what oligos do I order", or "make me primers for this batch".
+description: Design PCR primers that add the MoClo Yeast Toolkit (YTK) Golden Gate flanks to a coding sequence, so the product amplified from cDNA is already YTK-compatible and drops straight into the pYTK001 entry vector. Works out the binding region, Tm, GC and the annealing temperature, and writes one CSV to order from. Use this whenever someone wants primers, oligos, a primer pair, something to order from a supplier, or asks how to amplify a gene for YTK cloning, Golden Gate or the entry vector - including when they only say "design primers for these genes", "what oligos do I order", or "make me primers for this batch". For the whole job at once, use ytk-workflow.
 ---
 
 # Design YTK primers
@@ -11,7 +11,7 @@ pairs, ready to order.
 The primer carries the YTK flanks on its 5' end, so the PCR product is already
 YTK-compatible. Amplification is from cDNA.
 
-## What you must be told
+## What you need from the person
 
 - **The sequences.** A file, or one sequence on the command line.
 - Nothing else. This skill only makes Type 3 parts, so there is no part type to
@@ -22,14 +22,14 @@ Never guess a sequence, and never change one.
 ## Run it
 
 ```
-python3 skills/ytk-design-primers/scripts/design_primers.py \
+python3 "$CLAUDE_SKILL_DIR/scripts/design_primers.py" \
     --input genes.csv --outdir out/
 ```
 
 One sequence instead of a file:
 
 ```
-python3 skills/ytk-design-primers/scripts/design_primers.py \
+python3 "$CLAUDE_SKILL_DIR/scripts/design_primers.py" \
     --sequence ATGAAA...TAA --name my_gene --outdir out/
 ```
 
@@ -99,14 +99,14 @@ In a batch, do not stop at the first problem. The script collects every problem,
 prints one table, and asks once. Show the person that table.
 
 **A pair that will not balance is not a refusal.** If nothing gets the two Tms
-within 2 C, the closest pair still comes out, with a warning saying so. It is a
-starting point for finishing the design by hand, which is more use than
-nothing. Point out the warning; do not present those primers as finished.
+within 2 C, the closest pair still comes out, with a warning saying so. Use it as a
+starting point and finish the design by hand. Point out the warning; do not present those primers as finished.
 
 ## Where the Tm comes from
 
 primer3, with Phusion's reaction conditions, plus a fixed offset that was
-measured once against 49 real primers checked on the NEB Phusion calculator.
+measured once against the 45 sound rows of a 49-primer sheet, checked on the
+NEB Phusion calculator.
 Do not tune it per primer. `tests/test_primers.py` fails if it drifts.
 
 ## After this

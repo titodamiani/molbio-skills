@@ -1,6 +1,10 @@
-"""Read and write SnapGene .dna files, and compare circular sequences.
+"""Read and write plasmid maps, and compare circular sequences.
 
 Shared by more than one skill, so it lives at the repo root.
+
+Two formats. SnapGene .dna is written here by hand, byte by byte, and needs
+nothing installed. GenBank goes through Biopython. write_map and read_map pick
+between them from the file suffix, so a caller names a file and nothing else.
 
 A .dna file is a chain of chunks. Each chunk is 1 byte for the chunk type,
 then 4 bytes (big-endian) for the payload length, then the payload:
@@ -18,7 +22,8 @@ Feature positions in the XML are 1-based and include both ends. A feature
 that runs past the end of a circle is written with its end number lower than
 its start. directionality="2" means the reverse strand.
 
-Nothing here imports a third-party package, so it always works.
+The .dna half imports nothing, so it always works. Only the GenBank functions
+need Biopython, and they import it when called.
 """
 import csv
 import datetime
@@ -221,6 +226,101 @@ def read_dna(path):
         elif chunk_type == 10:
             result["features_xml"] = payload.decode("utf-8")
     return result
+
+
+# --- GenBank -----------------------------------------------------------
+
+GENBANK_SUFFIXES = {".gb", ".gbk"}
+
+
+def _genbank_feature(feature, length):
+    from Bio.SeqFeature import CompoundLocation, FeatureLocation, SeqFeature
+
+    strand = feature.get("strand", 1)
+    wrap_end = feature.get("wrap_end")
+    if wrap_end:
+        # A feature that runs past the end of the circle is a join() of the
+        # two pieces. Biopython wants the parts in 5' to 3' order, which on
+        # the reverse strand is the other way round.
+        parts = [FeatureLocation(feature["start"], length, strand),
+                 FeatureLocation(0, wrap_end, strand)]
+        if strand == -1:
+            parts.reverse()
+        location = CompoundLocation(parts)
+    else:
+        location = FeatureLocation(feature["start"], feature["end"], strand)
+    return SeqFeature(location, type=feature["type"],
+                      qualifiers={"label": [feature["name"]]})
+
+
+def write_genbank(path, sequence, circular, notes_type="Natural", description="",
+                  features=None, created_by="IOCB Prague"):
+    """Write a GenBank file, taking the same feature dicts as write_dna.
+
+    notes_type is SnapGene's own field and has no GenBank equivalent, so it is
+    accepted and ignored. That keeps the signature the same as write_dna, which
+    is what lets write_map forward to either one.
+    """
+    require("biopython", "Bio")
+    from Bio import SeqIO
+    from Bio.Seq import Seq
+    from Bio.SeqRecord import SeqRecord
+
+    name = Path(path).stem
+    record = SeqRecord(Seq(sequence.upper()), id=name, name=name,
+                       description=description)
+    record.annotations["molecule_type"] = "DNA"
+    record.annotations["topology"] = "circular" if circular else "linear"
+    record.annotations["date"] = datetime.date.today().strftime("%d-%b-%Y").upper()
+    record.annotations["source"] = created_by
+    record.features = [_genbank_feature(f, len(sequence)) for f in features or []]
+    SeqIO.write(record, str(path), "genbank")
+
+
+def read_genbank(path):
+    """Read a GenBank file into the same dict shape read_dna returns.
+
+    double_stranded is always True: a GenBank record has no such flag, because
+    the format assumes double-stranded DNA. Anything reporting that check has
+    to say it did not really run.
+    """
+    require("biopython", "Bio")
+    from Bio import SeqIO
+
+    record = SeqIO.read(str(path), "genbank")
+    return {"sequence": str(record.seq).upper(),
+            "circular": record.annotations.get("topology") == "circular",
+            "double_stranded": True}
+
+
+# --- either format -----------------------------------------------------
+
+
+def _is_genbank(path):
+    return Path(path).suffix.lower() in GENBANK_SUFFIXES
+
+
+def write_map(path, sequence, circular, **kwargs):
+    """Write a map as GenBank or SnapGene, picked from the file suffix.
+
+    Reads the file back and compares the sequence. A writer that dropped or
+    reordered bases would otherwise leave a file that opens perfectly and is
+    wrong, and nothing downstream would catch it.
+    """
+    writer = write_genbank if _is_genbank(path) else write_dna
+    writer(path, sequence, circular, **kwargs)
+
+    written = read_map(path)["sequence"]
+    if written != sequence.upper():
+        raise ValueError(
+            f"{path}: the file read back different from what was written "
+            f"({len(written)} bp against {len(sequence)}). The file is wrong. "
+            f"Send this to whoever maintains the plugin.")
+
+
+def read_map(path):
+    """Read a map from GenBank or SnapGene, picked from the file suffix."""
+    return read_genbank(path) if _is_genbank(path) else read_dna(path)
 
 
 # --- circles -----------------------------------------------------------

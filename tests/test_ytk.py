@@ -1,4 +1,4 @@
-"""Tests for the molbio-skills plugin.
+"""Tests for the ytk-skills plugin.
 
 Run them like this:
 
@@ -18,7 +18,9 @@ The five cases each cover something different:
                     properties of the map are checked
     Pi_fim_NCS_c1   the linear writer, which the plasmid cases never touch
 """
+import contextlib
 import importlib.util
+import io
 import sys
 import tempfile
 import unittest
@@ -41,6 +43,7 @@ def load(path):
 clone = load(ROOT / "skills" / "ytk-clone" / "scripts" / "clone.py")
 annotate = load(ROOT / "skills" / "ytk-annotate-map" / "scripts" / "annotate_map.py")
 overhangs = load(ROOT / "skills" / "ytk-add-overhangs" / "scripts" / "add_overhangs.py")
+verify = load(ROOT / "skills" / "ytk-verify-map" / "scripts" / "verify_map.py")
 
 GENES = {name: seq for name, seq, _ in sg.read_genes(DATA / "genes.fasta")}
 BACKBONE = clone.backbone_sequence()
@@ -235,6 +238,129 @@ class TestLinearWriter(unittest.TestCase):
 
     def test_matches_the_hand_made_reference(self):
         self.assertEqual(reference("Pi_fim_NCS_c1"), self.written["sequence"])
+
+
+class TestGenBankRoundTrip(unittest.TestCase):
+    """GenBank is the portable format, for colleagues without SnapGene. A map
+    written that way has to hold exactly what the SnapGene writer would hold,
+    or the two formats quietly disagree about the same plasmid."""
+
+    def setUp(self):
+        self.plasmid = build("Pi_fim_NCS_c1")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.gb = Path(self.tmp.name) / "pTP412.gb"
+        self.dna = Path(self.tmp.name) / "pTP412.dna"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_genbank_round_trips_the_sequence(self):
+        sg.write_map(self.gb, self.plasmid, circular=True)
+        written = sg.read_map(self.gb)
+        self.assertEqual(self.plasmid, written["sequence"])
+        self.assertTrue(written["circular"])
+
+    def test_genbank_and_dna_hold_the_same_sequence(self):
+        sg.write_map(self.gb, self.plasmid, circular=True)
+        sg.write_map(self.dna, self.plasmid, circular=True)
+        self.assertEqual(sg.read_map(self.dna)["sequence"],
+                         sg.read_map(self.gb)["sequence"])
+
+    def test_a_linear_genbank_file_is_not_circular(self):
+        path = Path(self.tmp.name) / "gene.gb"
+        sg.write_map(path, GENES["Pi_fim_NCS_c1"], circular=False)
+        self.assertFalse(sg.read_map(path)["circular"])
+
+
+class TestGenBankFeatures(unittest.TestCase):
+    """A feature running past the end of the circle is the one most likely to
+    come out wrong, because GenBank writes it as a join() of two pieces while
+    SnapGene writes an end number lower than its start."""
+
+    def setUp(self):
+        self.plasmid = build("Pi_fim_NCS_c1")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "labelled.gb"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def features_back(self):
+        from Bio import SeqIO
+        return SeqIO.read(str(self.path), "genbank").features
+
+    def test_genbank_feature_labels_round_trip(self):
+        sg.write_map(self.path, self.plasmid, circular=True, features=[
+            {"name": "ColE1", "type": "rep_origin", "start": 10, "end": 110,
+             "strand": 1, "wrap_end": 0}])
+        back = self.features_back()
+        self.assertEqual(["ColE1"], [f.qualifiers["label"][0] for f in back])
+        self.assertEqual(["rep_origin"], [f.type for f in back])
+        self.assertEqual(10, int(back[0].location.start))
+        self.assertEqual(110, int(back[0].location.end))
+
+    def test_a_feature_that_crosses_the_origin_survives_genbank(self):
+        # Starts 40 bases before the end of the circle and runs 60 past it.
+        start = len(self.plasmid) - 40
+        sg.write_map(self.path, self.plasmid, circular=True, features=[
+            {"name": "wraps", "type": "misc_feature", "start": start,
+             "end": start + 100, "strand": 1, "wrap_end": 60}])
+        covered = sorted({int(base) for base in self.features_back()[0].location})
+        self.assertEqual(100, len(covered))
+        for base in (start, len(self.plasmid) - 1, 0, 59):
+            self.assertIn(base, covered)
+
+
+class TestGenBankEndToEnd(unittest.TestCase):
+    """ytk-clone has to write GenBank on request, and ytk-verify-map has to read
+    it back, or step 6 of the workflow stops working for anyone who picks it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = Path(self.tmp.name) / "out"
+        fragments = Path(self.tmp.name) / "fragments.csv"
+        fragments.write_text(
+            "name,sequence,plasmid\n"
+            f"Pi_fim_NCS_c1,{FRAGMENTS['Pi_fim_NCS_c1']},pTP412\n")
+        self.argv = ["clone.py", "--input", str(fragments),
+                     "--outdir", str(self.out)]
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_clone(self, *extra):
+        argv = sys.argv
+        sys.argv = self.argv + list(extra)
+        try:
+            # main() prints its own report, which would bury the test results.
+            with contextlib.redirect_stdout(io.StringIO()):
+                clone.main()
+        finally:
+            sys.argv = argv
+
+    def test_clone_writes_genbank_when_asked(self):
+        self.run_clone("--format", "genbank")
+        self.assertEqual(["pTP412.gb"], [p.name for p in (self.out / "maps").iterdir()])
+        self.assertEqual(["Pi_fim_NCS_c1.gb"],
+                         [p.name for p in (self.out / "fragments").iterdir()])
+
+    def test_clone_still_writes_snapgene_by_default(self):
+        self.run_clone()
+        self.assertEqual(["pTP412.dna"], [p.name for p in (self.out / "maps").iterdir()])
+
+    def test_both_formats_give_the_same_plasmid(self):
+        self.run_clone()
+        self.run_clone("--format", "genbank")
+        maps = self.out / "maps"
+        self.assertEqual(sg.read_map(maps / "pTP412.dna")["sequence"],
+                         sg.read_map(maps / "pTP412.gb")["sequence"])
+
+    def test_verify_map_reads_a_genbank_file(self):
+        self.run_clone("--format", "genbank")
+        results = verify.check_file(self.out / "maps" / "pTP412.gb",
+                                    genes=[("Pi_fim_NCS_c1", GENES["Pi_fim_NCS_c1"])])
+        failed = [message for passed, message in results if not passed]
+        self.assertEqual([], failed)
 
 
 class TestPartsTable(unittest.TestCase):

@@ -1,6 +1,6 @@
 ---
 name: ytk-clone
-description: Simulate Golden Gate cloning and write the map of the finished construct, the way SnapGene's cloning simulation does. Cuts flanked fragments and a backbone with a Type IIS enzyme, checks the sticky ends match, joins them, and writes one SnapGene .dna file per plasmid. Defaults to the MoClo Yeast Toolkit entry reaction - pYTK001 with BsmBI - and takes any other backbone and any Type IIS enzyme. Use this whenever someone has flanked fragments and wants plasmid maps, SnapGene files, Golden Gate or Gibson-style assembly simulated, YTK Type 3 part plasmids, entry vector cloning, or asks whether a cloning will work - including when they only say "turn these into plasmids", "make maps for this batch", or "clone these into the vector". For bare genes with no overhangs yet, use ytk-add-overhangs first.
+description: Simulate Golden Gate cloning and write the map of the finished construct, the way SnapGene's cloning simulation does. Cuts flanked fragments and a backbone with a Type IIS enzyme, checks the sticky ends match, joins them, and writes one map per plasmid, as a SnapGene .dna or GenBank file. Defaults to the MoClo Yeast Toolkit entry reaction - pYTK001 with BsmBI - and takes any other backbone and any Type IIS enzyme. Use this whenever someone has flanked fragments and wants plasmid maps, SnapGene files, Golden Gate assembly simulated, YTK Type 3 part plasmids, entry vector cloning, or asks whether a cloning will work - including when they only say "turn these into plasmids", "make maps for this batch", or "clone these into the vector". For bare genes with no overhangs yet, use ytk-add-overhangs first.
 ---
 
 # Build YTK part plasmids
@@ -19,7 +19,7 @@ For each fragment it writes two files:
 ## Run it
 
 ```bash
-python3 scripts/clone.py --input FRAGMENTS --outdir OUTDIR
+python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS --outdir OUTDIR
 ```
 
 That clones into pYTK001 with BsmBI, which is the YTK entry reaction.
@@ -27,7 +27,7 @@ That clones into pYTK001 with BsmBI, which is the YTK entry reaction.
 Any other vector, any other Type IIS enzyme:
 
 ```bash
-python3 scripts/clone.py --input FRAGMENTS --outdir OUTDIR \
+python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS --outdir OUTDIR \
     --backbone my_vector.gb --enzyme BsaI
 ```
 
@@ -36,17 +36,19 @@ Biopython knows. Away from the default pair, the Type 3 junction check is
 skipped, because `TATG`/`ATCC` only means something for the entry reaction. The
 overhangs are still checked: pydna refuses to join ends that do not match.
 
-`scripts/clone.py` sits in this skill's own folder. The script finds the shared
-code and the parts table by itself, so it works wherever the plugin is
-installed.
+`$CLAUDE_SKILL_DIR` is this skill's own folder, so the command works from any
+directory. The script finds the shared code and the parts table by itself.
 
 ## What comes out
 
 Two folders, because plasmid names come from the input and cannot be matched by
 a pattern:
 
-- `OUTDIR/maps/` - one labelled-ready circular `.dna` per plasmid
-- `OUTDIR/fragments/` - one linear `.dna` per fragment
+- `OUTDIR/maps/` - one circular map per plasmid, not yet labelled
+- `OUTDIR/fragments/` - one linear map per fragment
+
+`--format genbank` writes `.gb` files instead of SnapGene `.dna`. The default is
+`dna`. The plasmid is identical either way; only the file format changes.
 
 So the next step can just take `OUTDIR/maps/*.dna`.
 
@@ -79,9 +81,9 @@ someone's sequences is how errors get built into a plasmid.
 
 ## Plasmid names
 
-Plasmid names come from the plasmid column. Real lab numbers are not a tidy
-series — pTP412, pTP768 and pTP002 sit happily side by side — so the script
-never counts them out for itself.
+Plasmid names come from the plasmid column. Real lab numbers are not in order.
+pTP412, pTP768 and pTP002 can be three plasmids in a row. So the script never
+makes up a number.
 
 Where a row gives no plasmid name, and for every FASTA file, the plasmid is
 named `<gene>_<backbone>.dna` — for example `Pi_fim_NCS_c1_pYTK001.dna`. The
@@ -114,10 +116,10 @@ downstream would catch it.
 
 Do not work around any of these. If you spot a problem with a sequence — a
 missing start codon, a length that is not a whole number of codons, an
-unexpected stop — say so and stop. Do not fix it, even when the fix is
-obvious and silent, such as a codon change to remove a cut site. A corrected
-gene looks right and ends up at the bench. Only the person whose gene it is
-gets to decide.
+unexpected stop — say so and stop. Do not fix it, even when the fix is small
+and invisible, such as a codon change to remove a cut site. A corrected gene
+looks right, so it reaches the bench unnoticed. Only the owner of the gene
+decides.
 
 ## What the script does
 

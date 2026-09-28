@@ -1,7 +1,7 @@
-"""Put labels on a SnapGene plasmid map.
+"""Put labels on a plasmid map.
 
-Reads a .dna file, looks for known YTK parts in it, and writes the file back
-with those parts labelled.
+Reads a SnapGene .dna or GenBank file, looks for known YTK parts in it, and
+writes the file back in the same format with those parts labelled.
 
     python3 annotate.py out/pTP412.dna
     python3 annotate.py out/*.dna --genes genes.fasta
@@ -85,7 +85,7 @@ def build_features(plasmid, parts, genes):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("plasmids", nargs="+", help=".dna files to label")
+    ap.add_argument("plasmids", nargs="+", help="map files to label (.dna, .gb, .gbk)")
     ap.add_argument("--genes", help="FASTA or CSV file of the cloned genes")
     args = ap.parse_args()
 
@@ -93,9 +93,9 @@ def main():
     genes = [(n, s) for n, s, _ in sequences.read(args.genes)] if args.genes else []
 
     for path in args.plasmids:
-        record = sg.read_dna(path)
+        record = sg.read_map(path)
         features = build_features(record["sequence"], parts, genes)
-        sg.write_dna(path, record["sequence"], circular=record["circular"],
+        sg.write_map(path, record["sequence"], circular=record["circular"],
                      notes_type="Synthetic" if record["circular"] else "Natural",
                      description="synthetic circular DNA." if record["circular"] else "",
                      features=features)

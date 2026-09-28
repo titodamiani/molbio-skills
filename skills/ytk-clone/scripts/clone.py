@@ -5,8 +5,8 @@ the fragment and the backbone with a Type IIS enzyme, check the sticky ends
 match, join them, and write the finished map.
 
 Reads fragments that already carry their flanks. Use ytk-add-overhangs to design
-them. For each fragment it writes two SnapGene files: the fragment on its own
-(linear) and the finished plasmid (circular).
+them. For each fragment it writes two files: the fragment on its own (linear)
+and the finished plasmid (circular). --format picks SnapGene .dna or GenBank.
 
     python3 clone.py --input fragments.csv --outdir out/
     python3 clone.py --input fragments.csv --outdir out/ \
@@ -24,7 +24,6 @@ says so.
 """
 import argparse
 import csv
-import re
 import sys
 from pathlib import Path
 
@@ -77,13 +76,9 @@ def load_backbone(path):
         found = None
     if found:
         return Path(path).stem, found[0][1]
-    suffix = Path(path).suffix.lower()
-    if suffix == ".dna":
-        return Path(path).stem, sg.read_dna(path)["sequence"].upper()
-    deps.require("Bio")
-    from Bio import SeqIO
-    record = next(SeqIO.parse(str(path), "genbank"))
-    return Path(path).stem, str(record.seq).upper()
+    # Only a map file gets here, because sequences.read raises AmbiguousCDS
+    # when a map holds more than one candidate feature.
+    return Path(path).stem, sg.read_map(path)["sequence"]
 
 
 def backbone_sequence():
@@ -241,12 +236,14 @@ def main():
     ap.add_argument("--name", help="what to call a --fragment")
     ap.add_argument("--plasmid", help="what to call the plasmid from a --fragment")
     ap.add_argument("--feature", help="which feature holds the fragment, for map files")
-    ap.add_argument("--outdir", required=True, help="where to write the .dna files")
+    ap.add_argument("--outdir", required=True, help="where to write the maps")
     ap.add_argument("--backbone", default=None,
                     help=f"vector to clone into (.dna, .gb, .gbk, FASTA); "
                          f"default {BACKBONE_NAME}")
     ap.add_argument("--enzyme", default="BsmBI",
                     help="Type IIS enzyme to cut with (default BsmBI)")
+    ap.add_argument("--format", default="dna", choices=["dna", "genbank"],
+                    help="output map format (default dna, for SnapGene)")
     args = ap.parse_args()
 
     if not args.input and not args.fragment:
@@ -289,20 +286,21 @@ def main():
                      f"Send this fragment to whoever maintains the plugin.")
 
     # Two folders, because plasmid names come from the input and cannot be
-    # matched by a pattern. A later step can just take maps/*.dna.
+    # matched by a pattern. A later step can just take maps/*.
     outdir = Path(args.outdir)
     fragments = outdir / "fragments"
     maps = outdir / "maps"
     for folder in (fragments, maps):
         folder.mkdir(parents=True, exist_ok=True)
 
+    suffix = ".gb" if args.format == "genbank" else ".dna"
     width = max(len(p) for _, _, p, _ in built) + 2
     print(f"{'fragment':24s} {'plasmid':{width}s} {'frag bp':>8s} "
           f"{'plasmid bp':>11s}  internal site")
     for name, gene, plasmid_name, plasmid in built:
-        sg.write_dna(fragments / f"{name}.dna", gene, circular=False,
+        sg.write_map(fragments / f"{name}{suffix}", gene, circular=False,
                      notes_type="Natural")
-        sg.write_dna(maps / f"{plasmid_name}.dna", plasmid, circular=True,
+        sg.write_map(maps / f"{plasmid_name}{suffix}", plasmid, circular=True,
                      notes_type="Synthetic", description="synthetic circular DNA.")
 
         print(f"{name:24s} {plasmid_name:{width}s} {len(gene):>8d} {len(plasmid):>11d}"

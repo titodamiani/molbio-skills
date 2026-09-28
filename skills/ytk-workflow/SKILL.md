@@ -23,7 +23,9 @@ Ask for, and never guess:
 - **the gene file** (`.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`)
 - **where to put the output**
 - **the plasmid numbers**, if they want particular ones. Real plasmid numbers
-  jump about, so they go in a `plasmid` column in the CSV. Never invent one.
+  are not in order, so they go in a `plasmid` column in the CSV. Never invent one.
+- **the map format**, if they have a preference. SnapGene `.dna` is the default.
+  GenBank is for anyone without SnapGene. Ask only if it might matter to them.
 
 The part type is always 3. There is nothing to ask about that.
 
@@ -32,7 +34,7 @@ The part type is always 3. There is nothing to ask about that.
 **Step 1 — check the sequences.**
 
 ```
-python3 skills/ytk-cds-qc/scripts/cds_qc.py --input genes.csv
+python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-cds-qc/scripts/cds_qc.py" --input genes.csv
 ```
 
 If anything fails here, stop and show the table. Do not carry on with a
@@ -41,41 +43,45 @@ sequence that is not a valid Type 3 CDS.
 **Step 2 — add the flanks.** `--format csv` so the next step can read it.
 
 ```
-python3 skills/ytk-add-overhangs/scripts/add_overhangs.py \
+python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-add-overhangs/scripts/add_overhangs.py" \
     --input genes.csv --type 3 --format csv --outdir out/
 ```
 
 **Step 3 — design the primers.**
 
 ```
-python3 skills/ytk-design-primers/scripts/design_primers.py \
+python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-design-primers/scripts/design_primers.py" \
     --input genes.csv --outdir out/
 ```
 
 **Step 4 — clone.** Reads the flanked fragments from step 2.
 
 ```
-python3 skills/ytk-clone/scripts/clone.py \
+python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-clone/scripts/clone.py" \
     --input out/ytk_order.csv --outdir out/
 ```
 
 Step 4 writes the maps to `out/maps/` and the linear fragments to
-`out/fragments/`, so the next two steps can just take `out/maps/*.dna`. Plasmid
+`out/fragments/`, so the next two steps can just take `out/maps/*`. Plasmid
 names come from the `plasmid` column and are carried through, so the maps are
 named `pTP412.dna` and not after the gene.
+
+For GenBank, add `--format genbank` to steps 2 and 4. The maps are then
+`out/maps/*.gb`, and steps 5 and 6 read them without any extra flag. Use the
+same format for both steps, so the whole run is in one format.
 
 **Step 5 — label the maps.** `--genes` points at the **original** gene file, so
 the gene itself gets labelled and not the flanked version.
 
 ```
-python3 skills/ytk-annotate-map/scripts/annotate_map.py \
+python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-annotate-map/scripts/annotate_map.py" \
     out/maps/*.dna --genes genes.csv
 ```
 
 **Step 6 — check the maps.**
 
 ```
-python3 skills/ytk-verify-map/scripts/verify_map.py \
+python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-verify-map/scripts/verify_map.py" \
     out/maps/*.dna --genes genes.csv
 ```
 
