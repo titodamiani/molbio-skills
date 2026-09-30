@@ -194,9 +194,14 @@ class TestAnUnbalanceablePairIsStillReturned(unittest.TestCase):
         self.assertTrue(self.designed["reverse"])
 
     def test_it_says_to_finish_the_design_by_hand(self):
-        apart = [w for w in self.designed["warnings"] if "apart" in w]
+        apart = self.designed["warnings"]["pair"]
         self.assertEqual(len(apart), 1)
         self.assertIn("by hand", apart[0])
+
+    def test_the_gap_warning_reaches_both_oligo_rows(self):
+        """A gap is a fact about the pair, so it belongs on both of its rows."""
+        for row in primers.rows_for_csv(self.designed):
+            self.assertIn("apart", row["warnings"])
 
     def test_it_is_the_closest_pair_available(self):
         gap = abs(self.designed["forward_tm"] - self.designed["reverse_tm"])
@@ -233,7 +238,7 @@ class TestTheCsvColumns(unittest.TestCase):
         # order file. Repeating it on both oligo rows only buried the real ones.
         designed = primers.design("gene1", "ATGCGTCTCAAAA" + "GCTAGCTAGCTTGCATCGA" * 3
                                   + "TAA", ADAPTERS)
-        self.assertNotIn("holds", "; ".join(designed.get("warnings", [])))
+        self.assertNotIn("holds", "; ".join(primers.all_warnings(designed)))
 
 
 class TestTellingTheInsertFromTheBackbone(unittest.TestCase):
@@ -312,7 +317,7 @@ class TestTheRealPrimers(unittest.TestCase):
             with self.subTest(gene=gene):
                 gap = abs(d["forward_tm"] - d["reverse_tm"])
                 self.assertLessEqual(gap, primers.MAX_PAIR_GAP)
-                self.assertFalse([w for w in d["warnings"] if "apart" in w])
+                self.assertFalse(d["warnings"]["pair"])
 
     def test_the_binding_regions_come_from_the_gene_unchanged(self):
         for gene, sequence, _, _ in self.pairs:
@@ -391,6 +396,36 @@ class TestTheTmOffset(unittest.TestCase):
 
     def test_the_offset_is_not_quietly_retuned(self):
         self.assertAlmostEqual(primers.TM_OFFSET, 1.31, places=2)
+
+
+
+
+class TestWarningsBelongToOneOligo(unittest.TestCase):
+    """A warning used to be written to both rows, so a run of identical bases in
+    the forward primer was reported against the reverse one too. That makes a
+    good oligo look suspect, and buries the row that really needs looking at."""
+
+    def setUp(self):
+        # The forward binding region starts in a run of A's; the reverse one, read
+        # off the other end, does not.
+        self.designed = primers.design(
+            "gene1", "ATGAAAAAAGCTGCATCGATCGCAGCATCGATCGCAGCATCGATCGCTAA",
+            ADAPTERS)
+        self.rows = {row["oligo"]: row["warnings"]
+                     for row in primers.rows_for_csv(self.designed)}
+
+    def test_a_forward_only_problem_is_only_on_the_forward_row(self):
+        self.assertIn("run of", self.rows["gene1_forward"])
+        self.assertNotIn("run of", self.rows["gene1_reverse"])
+
+    def test_no_row_names_the_other_oligo(self):
+        self.assertNotIn("reverse", self.rows["gene1_forward"])
+        self.assertNotIn("forward", self.rows["gene1_reverse"])
+
+    def test_there_is_no_combined_tm_column(self):
+        """An annealing temperature is a property of a pair, and a row is one
+        oligo, so the column was only right when oligos came two by two."""
+        self.assertNotIn("combined", " ".join(primers.CSV_COLUMNS))
 
 
 if __name__ == "__main__":

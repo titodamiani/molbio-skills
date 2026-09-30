@@ -43,8 +43,11 @@ DOUBLE_STRANDED = 0x02
 NAME_HEADERS = {"name", "gene", "id", "gene_name", "gene name"}
 SEQUENCE_HEADERS = {"sequence", "seq", "dna"}
 PLASMID_HEADERS = {"plasmid", "plasmid_name", "plasmid name", "construct"}
-NOTES_HEADERS = {"notes", "note"}
 PART_TYPE_HEADERS = {"part_type", "part type", "type"}
+# The facts behind the notes column, each in its own column so no later step
+# has to read a sentence back apart.
+REMOVED_HEADERS = {"removed"}
+CODON_OPT_HEADERS = {"codon_opt_method", "codon opt method"}
 
 
 def read_genes(path):
@@ -127,13 +130,13 @@ def _read_gene_csv(path):
 def read_column(path, wanted):
     """An optional extra column of a gene CSV, as {gene name: value}.
 
-    Used for the `notes` and `part_type` columns that ytk-add-overhangs writes
-    and later steps carry through. Returns {} for FASTA, GenBank, .dna, a CSV
-    with no header, or a CSV without that column - the columns are optional
-    everywhere, so a missing one is not an error.
+    Used for the `part_type`, `plasmid`, `removed` and `codon_opt_method`
+    columns. Returns {} for FASTA, GenBank, .dna, a CSV with no header, or a CSV
+    without that column - the columns are optional everywhere, so a missing one
+    is not an error.
 
     The value rides on the same row as the sequence it describes, which is the
-    point: there is no join key, so a note can never end up attached to a
+    point: there is no join key, so a fact can never end up attached to a
     different sequence than the one it was written for.
     """
     path = Path(path)

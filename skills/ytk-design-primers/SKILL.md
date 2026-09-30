@@ -44,25 +44,31 @@ feature is left, it is used. If several are, the run stops and lists them, and
 
 ## What comes out
 
-`out/primers.csv`, two rows per sequence, one per oligo, named
+`out/ytk_primers.csv`, two rows per sequence, one per oligo, named
 `<name>_forward` and `<name>_reverse`. The columns:
 
-`oligo_name`, `sequence`, `full_length_bp`, `bind_region_length_bp`,
-`bind_region_gc_pct`, `Tm_phusion_C`, `Tm_phusion_combined_C`, `warnings`.
+`oligo`, `sequence`, `full_length`, `binding_region_length`,
+`bind_region_gc`, `tm_phusion`, `warnings`.
 
-**Every number except `full_length_bp` is measured on the binding region
-alone**, not the whole oligo - hence the `bind_region_` names. Only the binding
-region sticks to the template in the first PCR cycle, and the flanks are fixed
-YTK adapters, so their GC is not the designer's to fix.
+**Every number except `full_length` is measured on the binding region alone**,
+not the whole oligo. Only the binding region sticks to the template in the first
+PCR cycle, and the flanks are fixed YTK adapters, so their GC is not the
+designer's to fix.
 
-`Tm_phusion_combined_C` is not a melting temperature. It is the annealing
-temperature to run the PCR at: three degrees above the lower of the two primer
-Tms, which is NEB's rule for primers over 20 nt.
+**There is no combined Tm column.** An annealing temperature belongs to a pair,
+and a row is one oligo, so the column was only ever right when the oligos
+happened to be ordered two by two. The suggested temperature - three degrees
+above the lower of the two primer Tms, which is NEB's rule for primers over 20
+nt - is printed on screen instead, per pair. Confirm it on the NEB calculator
+before you order.
 
-`warnings` holds oligo problems only - a low Tm, a GC outside the band, a long
-single-base run, an over-length primer, an unbalanced pair. A cut site inside
-the gene is **not** here: that is a fact about the gene, and it belongs to
-`ytk-cds-qc` and to `fragments/summary.csv`.
+`warnings` holds **that oligo's** problems only - a low Tm, a GC outside the
+band, a long single-base run, an over-length primer. A run of identical bases in
+the forward primer says nothing about the reverse one, so it is not repeated
+there. The one exception is an unbalanced pair, which is written to both rows
+because it is a fact about both. A cut site inside the gene is **not** here:
+that is a fact about the gene, and it belongs to `ytk-cds-qc` and to
+`fragments/summary.csv`.
 
 ## The rules it follows
 

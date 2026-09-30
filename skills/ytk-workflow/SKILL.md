@@ -27,8 +27,8 @@ Ask for, and never guess:
 
 Everything else has a default that is right nearly always, so do not ask about
 it. The part type is always 3. Maps are GenBank unless they ask for SnapGene
-`.dna`. Plasmid names come from a `plasmid` column, with `<gene>_pYTK001` as the
-fallback.
+`.dna`, and that is chosen once, at step 2. Plasmid names come from a `plasmid`
+column, with `<gene>_pYTK001` as the fallback.
 
 **If they do not say where to put the output**, do not ask either. Leave
 `--outdir` off and every step writes to a `ytk_output/` folder beside the input
@@ -61,25 +61,25 @@ Always this, whatever the input was:
 
 ```
 OUTPUT/
-  input_genes.csv        a copy of the input
-  corrected_genes.csv    only when sites were removed
-  primers.csv            two rows per gene, one per oligo
+  input.csv              a copy of the input, as CSV whatever it was
+  corrected_genes/       only when sites were removed
+    input_corrected.csv  what every later step reads
+    summary.csv          the old sequence beside the new one
+  ytk_primers.csv        two rows per gene, one per oligo
   fragments/
     summary.csv          the synthesis order
     <gene>.gb            the flanked sequence, one per gene
-  pYTK001_maps/
-    summary.csv
-    <plasmid>.gb
+  plasmids/
+    pYTK001/
+      summary.csv
+      <plasmid>.gb
 ```
 
 ## Run it
 
-Set `OUT` to their output folder first, and copy the input in beside the
-results so the run can be traced later.
-
-```
-mkdir -p "$OUT" && cp genes.csv "$OUT/input_genes.csv"
-```
+Set `OUT` to their output folder first. Do not copy the input in by hand: step 1
+writes `input.csv` itself, which turns a FASTA or a `.dna` file into the CSV
+every later step reads.
 
 **Step 1 — check the sequences.**
 
@@ -98,14 +98,14 @@ python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-cds-qc/scripts/cds_qc.py" \
     --input genes.csv --remove-sites --outdir "$OUT"
 ```
 
-That writes `$OUT/corrected_genes.csv`, with a `notes` column saying what was
-cleared out of each gene. **Every later step then reads `corrected_genes.csv`,
-not `genes.csv`.** Steps 3, 5 and 6 included: primers designed from the original
-sequence would not match the corrected gene, and a map verified against the old
-sequence would report a difference that is not there.
+That writes `$OUT/corrected_genes/`. **Every later step then reads
+`input_corrected.csv` from there, not `input.csv`.** Steps 3, 5 and 6 included:
+primers designed from the original sequence would not match the corrected gene,
+and a map verified against the old sequence would report a difference that is
+not there.
 
-Below, `GENES` means `genes.csv` normally and `$OUT/corrected_genes.csv` when
-the removal step ran.
+Below, `GENES` means `$OUT/input.csv` normally and
+`$OUT/corrected_genes/input_corrected.csv` when the removal step ran.
 
 **Step 2 — add the flanks.**
 
@@ -116,8 +116,11 @@ python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-add-overhangs/scripts/add_overhangs.py" 
 
 Writes `$OUT/fragments/`: one `<gene>.gb` per gene, plus `summary.csv`. That
 summary is both the synthesis order and the input to step 4. It picks up the
-`notes` column from `$GENES` when there is one, so a gene that had a site
+`removed` column from `$GENES` when there is one, so a gene that had a site
 removed says so on the row its sequence is on.
+
+**This is where the map format is chosen.** Add `--format dna` here for SnapGene
+files, and step 4 follows by itself.
 
 **Step 3 — design the primers.**
 
@@ -126,33 +129,33 @@ python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-design-primers/scripts/design_primers.py
     --input "$GENES" --outdir "$OUT"
 ```
 
-**Step 4 — clone.** Reads the fragment summary from step 2.
+**Step 4 — clone.** Reads the fragment summary from step 2, and the plasmid
+names from `$GENES`.
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-clone/scripts/clone.py" \
-    --input "$OUT/fragments/summary.csv" --outdir "$OUT"
+    --input "$OUT/fragments/summary.csv" --genes "$GENES" --outdir "$OUT"
 ```
 
-Writes `$OUT/pYTK001_maps/`, named after the backbone actually used. Plasmid
-names come from the `plasmid` column and are carried through, so a map is called
-`pTP412.gb` and not after the gene.
+Writes `$OUT/plasmids/pYTK001/`, named after the backbone actually used. Plasmid
+names come from the `plasmid` column of `$GENES`, so a map is called `pTP412.gb`
+and not after the gene.
 
-For SnapGene `.dna` instead, add `--format dna` to steps 2 and 4. Use the same
-format for both, so the whole run is in one format.
+Do not pass `--format` here. It matches the fragments from step 2 by itself.
 
 **Step 5 — label the maps.** `--genes` points at `$GENES`, so the gene itself
 gets labelled and not the flanked version.
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-annotate-map/scripts/annotate_map.py" \
-    "$OUT"/pYTK001_maps/*.gb --genes "$GENES"
+    "$OUT"/plasmids/pYTK001/*.gb --genes "$GENES"
 ```
 
 **Step 6 — check the maps.**
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-verify-map/scripts/verify_map.py" \
-    "$OUT"/pYTK001_maps/*.gb --genes "$GENES"
+    "$OUT"/plasmids/pYTK001/*.gb --genes "$GENES"
 ```
 
 With no reference file this checks the map on its own: reading frame, ATG, stop
@@ -174,7 +177,8 @@ Steps 1, 3 and 4 can stop. When one does:
 - how many pairs of primers, and where the CSV is
 - how many maps, and where
 - which genes had a site removed, and which still hold one, straight from the
-  `notes` column of `fragments/summary.csv`
+  `notes` column of `fragments/summary.csv`. An empty note means the gene was
+  clean and nothing was done to it.
 - any primer pair that would not balance within 2 C, which needs finishing by
   hand
 - anything skipped, and why

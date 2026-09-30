@@ -5,10 +5,10 @@ the fragment and the backbone with a Type IIS enzyme, check the sticky ends
 match, join them, and write the finished map.
 
 Reads fragments that already carry their flanks. Use ytk-add-overhangs to design
-them. One circular map per plasmid goes into a <backbone>_maps/ folder, with a
-summary.csv beside them. --format picks SnapGene .dna or GenBank.
+them. One circular map per plasmid goes into plasmids/<backbone>/, with a
+summary.csv beside them.
 
-    python3 clone.py --input fragments/summary.csv
+    python3 clone.py --input fragments/summary.csv --genes input.csv
     python3 clone.py --input fragments/summary.csv --outdir out/ \
         --backbone my_vector.gb --enzyme BsaI
 
@@ -17,8 +17,12 @@ Without --outdir the maps go in a ytk_output/ folder beside the input.
 The backbone defaults to pYTK001 and the enzyme to BsmBI, which is the YTK entry
 reaction. Any Type IIS enzyme Biopython knows works.
 
-Plasmid names come from the plasmid name column of the CSV, because real
-plasmid numbers are not a tidy series. Without that column a plasmid is named
+The map format is not asked for here. It is read off the fragment maps beside
+the input, so the maps come out in whatever format the fragments were written
+in. --format overrides that.
+
+Plasmid names come from the plasmid column of --genes, because real plasmid
+numbers are not a tidy series. Without one a plasmid is named
 <fragment>_<backbone>, for example Pi_fim_NCS_c1_pYTK001.
 
 Input sequences are never changed. If one looks wrong the script stops and
@@ -35,6 +39,7 @@ import snapgene as sg
 
 import deps                               # noqa: E402
 import enzymes                           # noqa: E402
+import notes                              # noqa: E402
 import output                             # noqa: E402
 import sequences                          # noqa: E402
 
@@ -103,12 +108,27 @@ def part_type_junctions():
 def plasmid_file_name(fragment_name, given_name):
     """What to call the plasmid file.
 
-    The fragment file names it when it can. Otherwise the name says which part
+    The input file names it when it can. Otherwise the name says which part
     went into which vector, so a folder of files still reads clearly later.
     """
     return given_name or f"{fragment_name}_{BACKBONE_NAME}"
 
 
+def map_format(fragment_file, chosen):
+    """Which format to write the maps in.
+
+    The format is decided once, when the fragments are written, so reading it
+    back off those files means the maps cannot come out in a different format
+    from the fragments they were built from. Nobody has to pass the same flag to
+    two scripts and remember to keep them the same.
+
+    GenBank when there are no fragment maps to look at, which is the case for a
+    bare FASTA of fragments.
+    """
+    if chosen:
+        return chosen
+    beside = Path(fragment_file).parent
+    return "dna" if any(beside.glob("*.dna")) else "genbank"
 
 
 
@@ -219,14 +239,6 @@ class WrongFragment(Exception):
     """The fragment is not a flanked Type 3 part for this entry vector."""
 
 
-def has_internal_site(fragment):
-    """True when the fragment holds a cut site beyond its own flanks.
-
-    A flanked fragment carries two sites per enzyme by design, one at each end.
-    """
-    return bool(enzymes.beyond_flanks(fragment))
-
-
 # --- main --------------------------------------------------------------
 
 
@@ -236,6 +248,9 @@ def main():
                     help="files of flanked fragments (.fa, .fasta, .csv, .gb, "
                          ".gbk, .dna)")
     ap.add_argument("--feature", help="which feature holds the fragment, for map files")
+    ap.add_argument("--genes",
+                    help="the input CSV, for the plasmid names and for what was "
+                         "done to each gene")
     ap.add_argument("--outdir",
                     help="where to write the maps "
                          "(default: a ytk_output/ folder beside the input)")
@@ -244,9 +259,9 @@ def main():
                          f"default {BACKBONE_NAME}")
     ap.add_argument("--enzyme", default="BsmBI",
                     help="Type IIS enzyme to cut with (default BsmBI)")
-    ap.add_argument("--format", default="genbank", choices=["genbank", "dna"],
-                    help="output map format (default genbank, which SnapGene "
-                         "also opens)")
+    ap.add_argument("--format", default=None, choices=["genbank", "dna"],
+                    help="output map format (default: match the fragment maps "
+                         "beside the input, or genbank if there are none)")
     args = ap.parse_args()
 
     genes = []
@@ -263,12 +278,22 @@ def main():
     if not standard:
         print(f"cloning into {backbone_name} with {args.enzyme}\n")
 
+    # Plasmid names, and what was done to each gene, come from the input file.
+    # They are facts about the gene and not about the fragment, so they live
+    # with the input rather than being copied along the chain.
+    def from_genes(headers):
+        return sg.read_column(args.genes, headers) if args.genes else {}
+
+    given_names = from_genes(sg.PLASMID_HEADERS)
+    removed = from_genes(sg.REMOVED_HEADERS)
+    optimised = from_genes(sg.CODON_OPT_HEADERS)
+
     # Build every plasmid first and write nothing yet. If one fragment fails a
     # check, the run stops with no files written, instead of leaving half a
     # batch on disk for someone to find later.
     built = []
     for name, fragment, plasmid_name in genes:
-        plasmid_name = plasmid_file_name(name, plasmid_name)
+        plasmid_name = plasmid_file_name(name, given_names.get(name) or plasmid_name)
         try:
             built.append((name, fragment, plasmid_name,
                           assemble(fragment, backbone, enzyme, standard)))
@@ -280,34 +305,43 @@ def main():
                      f"Nothing was written. Your sequence was not changed.\n"
                      f"Send this fragment to whoever maintains the plugin.")
 
-    # One folder, named after the backbone actually used, so a run against a
-    # different vector cannot be mistaken for an entry-vector run.
-    maps = output.folder(args.outdir, args.input[0]) / f"{backbone_name}_maps"
+    # One folder per backbone under plasmids/, so a run against a different
+    # vector cannot be mistaken for an entry-vector run, and so the tree does
+    # not have to change when a second backbone is supported.
+    maps = output.folder(args.outdir, args.input[0]) / "plasmids" / backbone_name
     maps.mkdir(parents=True, exist_ok=True)
 
-    # part_type and notes ride along on the fragment file when ytk-add-overhangs
-    # wrote it. Both are optional: a bare FASTA of fragments still clones.
-    # Every input file is read, not just the first: with two fragment files the
-    # second one's genes would otherwise lose the record of what was cleared
-    # out of them, and a blank note is meant to mean "nothing known".
-    part_types, notes = {}, {}
+    # part_type rides along on the fragment file when ytk-add-overhangs wrote
+    # it, and is optional: a bare FASTA of fragments still clones. Every input
+    # file is read, not just the first, so a second fragment file's genes keep
+    # their part type too.
+    part_types = {}
     for path in args.input:
         part_types.update(sg.read_column(path, sg.PART_TYPE_HEADERS))
-        notes.update(sg.read_column(path, sg.NOTES_HEADERS))
 
-    suffix = ".gb" if args.format == "genbank" else ".dna"
+    suffix = ".gb" if map_format(args.input[0], args.format) == "genbank" else ".dna"
     width = max(len(p) for _, _, p, _ in built) + 2
     print(f"{'fragment':24s} {'plasmid':{width}s} {'frag bp':>8s} "
           f"{'plasmid bp':>11s}  internal site")
-    summary = [["name", "part_type", "plasmid", "notes"]]
+    summary = [["plasmid", "sequence", "part_type", "codon_opt", "notes"]]
+    flagged = []
     for name, gene, plasmid_name, plasmid in built:
         sg.write_map(maps / f"{plasmid_name}{suffix}", plasmid, circular=True,
                      notes_type="Synthetic", description="synthetic circular DNA")
-        summary.append([name, part_types.get(name, ""), plasmid_name,
-                        notes.get(name, "")])
+        # What is still in the gene is measured here, on the fragment in hand,
+        # rather than carried from the last step. A flanked fragment has two
+        # sites per enzyme by design, so only the extras count.
+        extra = enzymes.beyond_flanks(gene)
+        if extra:
+            flagged.append(name)
+        method = optimised.get(name, "")
+        summary.append([plasmid_name, name, part_types.get(name, ""),
+                        str(bool(method)).lower(),
+                        notes.summarise(notes.unpack(removed.get(name, "")),
+                                        extra, method)])
 
         print(f"{name:24s} {plasmid_name:{width}s} {len(gene):>8d} {len(plasmid):>11d}"
-              f"  {'yes' if has_internal_site(gene) else 'no'}")
+              f"  {'yes' if extra else 'no'}")
 
     with open(maps / "summary.csv", "w", newline="") as fh:
         csv.writer(fh).writerows(summary)
@@ -315,7 +349,7 @@ def main():
     # The column above is the report. ytk-cds-qc names these genes first and the
     # notes column carries them into the order file, so all that is left to add
     # is the one thing neither of those says: what it means at the bench.
-    if any(has_internal_site(gene) for _, gene, _, _ in built):
+    if flagged:
         print("\nA fragment marked yes cannot be re-cut with the same enzyme "
               "later. It was kept exactly as given.")
 

@@ -29,6 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "lib"))
 import cds        # noqa: E402
+import enzymes    # noqa: E402
 import flanks     # noqa: E402
 import notes      # noqa: E402
 import output     # noqa: E402
@@ -57,9 +58,9 @@ def check(name, sequence, adapters, allow_no_stop):
     not form, a reading frame that does not close, a stop codon in the middle
     of a protein fusion.
 
-    A cut site inside the sequence is not checked here. It is measured once, by
-    notes.for_order, and printed from the notes column, so the screen and the
-    order file cannot disagree about it.
+    A cut site inside the sequence is not checked here. It is measured once,
+    for the notes column, and printed from there, so the screen and the order
+    file cannot disagree about it.
     """
     if not re.fullmatch(r"[ACGT]+", sequence):
         sys.exit(f"{name}: the sequence holds something other than A, C, G and T")
@@ -142,16 +143,22 @@ def main():
         sys.exit(f"--no-stop-codon names a sequence that is not in the input: "
                  f"{', '.join(sorted(unknown))}")
 
-    # The notes column of the input, when there is one. cds_qc writes it when it
-    # removes a cut site, and it rides on the same row as the sequence it
-    # describes, so a note cannot end up against the wrong gene.
-    inherited = sg.read_column(args.input, sg.NOTES_HEADERS)
+    # What cds_qc did to each gene, read as facts and not as prose. Which
+    # enzymes it cleared cannot be measured after the swap, so that one is
+    # carried; what is still in the gene is measured again below. Both ride on
+    # the same row as the sequence they describe, so neither can end up against
+    # the wrong gene.
+    removed = sg.read_column(args.input, sg.REMOVED_HEADERS)
+    optimised = sg.read_column(args.input, sg.CODON_OPT_HEADERS)
 
     rows = []
-    for name, sequence, plasmid in parts:
+    for name, sequence, _ in parts:
         check(name, sequence, adapters, name in args.no_stop_codon)
-        rows.append((name, sequence, flanks.flank(sequence, adapters), plasmid,
-                     notes.for_order(sequence, inherited.get(name, ""))))
+        method = optimised.get(name, "")
+        note = notes.summarise(notes.unpack(removed.get(name, "")),
+                               enzymes.in_sequence(sequence), method)
+        rows.append((name, sequence, flanks.flank(sequence, adapters),
+                     bool(method), note))
 
     fragments = output.folder(args.outdir, args.input) / "fragments"
     fragments.mkdir(parents=True, exist_ok=True)
@@ -161,21 +168,26 @@ def main():
         print(f"\n{name}  type {args.type}  {len(sequence)} bp in, {len(ordered)} bp to order")
         print(ordered)
         # The note as it will appear in the order file, word for word, so what
-        # is on screen and what gets ordered cannot drift apart.
-        print(f"  note: {note}")
+        # is on screen and what gets ordered cannot drift apart. Nothing was
+        # done and nothing is left, so there is nothing to print.
+        if note:
+            print(f"  note: {note}")
         path = fragments / f"{name}{suffix}"
         write_labelled_map(path, name, sequence, ordered, adapters)
         print(f"  wrote {path}")
 
-    # summary.csv is both the synthesis order and the handoff to ytk-clone, so it
-    # carries plasmid and part_type as well. The name column is the plain gene
-    # name, not <name>_oh: ytk-clone names its output files from it.
+    # summary.csv is both the synthesis order and the handoff to ytk-clone. The
+    # sequence column is the flanked sequence, which is what you paste into an
+    # order form. The name column is the plain gene name, not <name>_oh:
+    # ytk-clone names its output files from it. Plasmid names are not here -
+    # they belong with the input, and ytk-clone reads them from there.
     summary = fragments / "summary.csv"
     with open(summary, "w", newline="") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["name", "part_type", "plasmid", "sequence", "notes"])
-        for name, _, ordered, plasmid, note in rows:
-            writer.writerow([name, args.type, plasmid or "", ordered, note])
+        writer.writerow(["name", "sequence", "part_type", "codon_opt", "notes"])
+        for name, _, ordered, codon_opt, note in rows:
+            writer.writerow([name, ordered, args.type,
+                             str(codon_opt).lower(), note])
     print(f"\nwrote {summary}")
 
     if adapters["note"]:

@@ -17,11 +17,16 @@ plasmid.
 ## Run it
 
 ```bash
-python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS
+python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS --genes GENES
 ```
 
 `FRAGMENTS` is `fragments/summary.csv` from **ytk-add-overhangs**. That clones
 into pYTK001 with BsmBI, which is the YTK entry reaction.
+
+`GENES` is the input file: `input.csv`, or
+`corrected_genes/input_corrected.csv` when sites were removed. The plasmid names
+and the record of what was done to each gene come from there, because both are
+facts about the gene rather than about the fragment.
 
 Without `--outdir` the maps go in a `ytk_output/` folder beside the input, and
 the script prints where. An input that is already inside one goes back into it,
@@ -48,19 +53,22 @@ One folder, named after the backbone actually cloned into, so a run against
 another vector cannot be mistaken for an entry-vector run:
 
 ```
-pYTK001_maps/
-  summary.csv    name, part_type, plasmid, notes
-  <plasmid>.gb   one circular map per plasmid, not yet labelled
+plasmids/
+  pYTK001/
+    summary.csv    plasmid, sequence, part_type, codon_opt, notes
+    <plasmid>.gb   one circular map per plasmid, not yet labelled
 ```
 
-`part_type` and `notes` are carried over from the fragment file when it has
-those columns, which it does when `ytk-add-overhangs` wrote it. Both are
+`sequence` is the gene name: which gene is in that plasmid. `part_type` comes
+from the fragment file, and `codon_opt` and `notes` from `--genes`. All are
 optional: a bare FASTA of fragments still clones, it just leaves them blank.
 
-`--format dna` writes SnapGene `.dna` instead of GenBank. The plasmid is
-identical either way; only the file format changes.
+**The format is not chosen here.** It is read off the fragment maps beside the
+input, so the maps come out in whatever format the fragments were written in.
+`--format` overrides that if you really need to. The plasmid is identical either
+way; only the file format changes.
 
-So the next step can just take `pYTK001_maps/*.gb` from the output folder.
+So the next step can just take `plasmids/pYTK001/*.gb` from the output folder.
 
 The linear post-digest pieces are not written. Nothing downstream reads them,
 and the fragment maps from `ytk-add-overhangs` are the ones worth keeping.

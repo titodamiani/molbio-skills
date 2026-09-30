@@ -12,7 +12,9 @@ DATA = ROOT / "tests" / "data"
 PLASMIDS = ROOT / "reference" / "ytk_plasmids"
 sys.path.insert(0, str(ROOT / "lib"))
 import cds          # noqa: E402
+import csv          # noqa: E402
 import enzymes      # noqa: E402
+import output       # noqa: E402
 import report       # noqa: E402
 import sequences    # noqa: E402
 import silent       # noqa: E402
@@ -198,6 +200,50 @@ class TestAskingOnceForAWholeBatch(unittest.TestCase):
         self.log.warn("gene_a", "holds a BsaI site")
         self.assertNotEqual(self.log.table(), "")
         self.assertEqual(self.log.question(), "")
+
+
+class TestTheInputCopy(unittest.TestCase):
+    """Every run writes input.csv, whatever format the input was.
+
+    The copy used to be a `cp` in the workflow instructions, so a FASTA or a
+    .dna input stayed in its own format and every later step had to know how to
+    read it again. Normalising it once means there is one input format
+    downstream instead of four.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def copy_of(self, source):
+        path = output.write_input_csv(sequences.read(source), self.out)
+        with open(path, newline="") as fh:
+            return list(csv.DictReader(fh))
+
+    def test_the_columns_are_always_the_same_three(self):
+        for source in ("genes.fasta", "genes.csv", "pTP412.dna"):
+            with self.subTest(source):
+                rows = self.copy_of(DATA / source)
+                self.assertEqual(["name", "plasmid", "sequence"],
+                                 list(rows[0]))
+
+    def test_a_fasta_becomes_a_csv_with_an_empty_plasmid_column(self):
+        rows = self.copy_of(DATA / "genes.fasta")
+        self.assertEqual(4, len(rows))
+        self.assertEqual([""] * 4, [row["plasmid"] for row in rows])
+
+    def test_a_plasmid_name_in_the_input_survives_the_copy(self):
+        rows = self.copy_of(DATA / "genes.csv")
+        self.assertIn("pTP412", [row["plasmid"] for row in rows])
+
+    def test_the_sequences_come_through_unchanged(self):
+        wanted = {name: seq for name, seq, _ in sequences.read(DATA / "genes.fasta")}
+        for row in self.copy_of(DATA / "genes.fasta"):
+            with self.subTest(row["name"]):
+                self.assertEqual(wanted[row["name"]], row["sequence"])
 
 
 if __name__ == "__main__":

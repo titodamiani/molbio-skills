@@ -23,7 +23,8 @@ Ask for these only if they matter to the person:
   sequence, which is the only type this plugin builds. The default is printed
   on every run.
 - **A different format.** Maps are GenBank, which SnapGene also opens.
-  `--format dna` writes SnapGene `.dna` instead. The synthesis order is always
+  `--format dna` writes SnapGene `.dna` instead, here and for every later step:
+  this is the one place the format is chosen. The synthesis order is always
   written as CSV either way.
 
 **A part type is still never read off the DNA.** Type 3 against 3a against 3b
@@ -54,9 +55,13 @@ Everything goes in a `fragments/` folder under the output folder:
 
 ```
 fragments/
-  summary.csv    name, part_type, plasmid, sequence, notes
+  summary.csv    name, sequence, part_type, codon_opt, notes
   <gene>.gb      one linear map per sequence
 ```
+
+`sequence` is the flanked sequence: what you paste into an order form. Plasmid
+names are not here. They belong with the input, and `ytk-clone` reads them from
+there.
 
 Each map is linear, and the sequence itself is labelled inside the flanks. Cut
 sites are left unlabelled on purpose: SnapGene shows them live under Enzymes, so
@@ -68,21 +73,25 @@ because `ytk-clone` names its output files from it.
 
 ### The notes column
 
-Per gene, what was cleared out of the CDS and what is still in it:
+Per gene, what was done to it and what is still in it. **Empty when the gene was
+clean and nothing was done.**
 
-- `input CDS contained no inner BsmBI/BsaI cut sites`
-- `BsmBI site removed` - per enzyme cleared, read from the `notes` column of the
-  input file, which `ytk-cds-qc --remove-sites` writes
+- `codon_opt (<method>)` - when the codons were optimised
+- `BsmBI site removed` - per enzyme cleared, read from the `removed` column of
+  the input file, which `ytk-cds-qc --remove-sites` writes
 - `BsaI site in the CDS` - per enzyme still there
 
-The two are not exclusive, so a note can read
+These are not exclusive, so a note can read
 `BsmBI site removed; BsaI site in the CDS`: one enzyme can be swapped out while
 another stays, because no synonymous codon removes it.
 
+The note is built from facts each of which has its own column, and never read
+back out of a sentence.
+
 **The "still there" half is always measured again here**, on the sequence being
-ordered, and nothing read from a file can suppress it. A stale or hand-edited
-`notes` column can therefore mislabel a safe fragment, but it can never hide a
-site. This file costs real money at a vendor.
+ordered, and nothing read from a file can suppress it. A stale column can
+therefore mislabel a safe fragment, but it can never hide a site. This file
+costs real money at a vendor.
 
 The flanked sequence is always printed as well, so it can be copied straight
 into SnapGene or a web form.

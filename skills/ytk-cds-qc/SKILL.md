@@ -65,15 +65,21 @@ both at the third position of a codon where the genetic code is redundant.
 
 Safeguards. None of them is optional:
 
-- **The input file is never touched.** A new `corrected_genes.csv` is written
-  in the output folder, with `name`, `plasmid`, `sequence` and `notes` - the
-  same column order as the fragment summary. It is a CSV and
-  not a FASTA because a FASTA header cannot carry the plasmid name or the notes,
-  and both have to reach the next step.
-- **Every row gets a note**, including the untouched ones, saying what was
-  cleared and what is still there - for example `BsmBI site removed`, or
-  `BsmBI site removed; BsaI site in the CDS` when no synonymous codon removes
-  the second one. A blank note would read as "clean", so there are none.
+- **The input file is never touched.** A new `corrected_genes/` folder is
+  written in the output folder, with two files:
+  - `summary.csv` - `name`, `input_sequence`, `new_sequence`, `codon_opt`,
+    `notes`. The old sequence beside the new one, for reading.
+  - `input_corrected.csv` - `name`, `plasmid`, `sequence`, `removed`,
+    `codon_opt_method`. The handoff to the next step. CSV and not FASTA,
+    because a FASTA header cannot carry any of the extra columns.
+- **The facts travel in their own columns.** `removed` holds the enzyme names,
+  so a later step rebuilds the note rather than reading the sentence apart.
+  Which enzymes were cleared cannot be measured after the swap, so that one has
+  to be carried; what is still in the gene is measured again at every step.
+- **The note says what was done and what is left** - for example
+  `BsmBI site removed`, or `BsmBI site removed; BsaI site in the CDS` when no
+  synonymous codon removes the second one. It is empty only when the gene was
+  clean and nothing was done.
 - **Every changed base is printed** with its position, its codon number, the old
   and new base, and the amino acid.
 - **The protein is translated before and after and compared.** If the protein

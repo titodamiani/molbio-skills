@@ -152,30 +152,36 @@ def _describe(name, sequence, pair, adapters, pad):
     forward = flanks.forward_primer(forward_binding, adapters, pad)
     reverse = flanks.reverse_primer(reverse_binding, adapters, pad)
 
+    # Warnings are kept per oligo, because that is what a CSV row is. A run of
+    # identical bases in the forward primer says nothing about the reverse one,
+    # and printing it on both rows only makes the good oligo look suspect.
+    #
     # Only oligo warnings here. A cut site inside the gene is a fact about the
     # gene, reported by ytk-cds-qc and by the order file, not about the primer.
-    warnings = []
+    warnings = {"forward": [], "reverse": [], "pair": []}
     for label, binding, primer, tm in (("forward", forward_binding, forward, tm_f),
                                        ("reverse", reverse_binding, reverse, tm_r)):
+        side = warnings[label]
         gc = gc_percent(binding)
         if tm < TM_LOW:
-            warnings.append(f"{label} Tm is {tm:.0f} C, below {TM_LOW}")
+            side.append(f"{label} Tm is {tm:.0f} C, below {TM_LOW}")
         # Between GC_LOW and the top of the ideal band there is nothing to say:
         # 30-40% is what a real coding sequence usually gives and it works.
         if gc < GC_LOW:
-            warnings.append(f"{label} GC is {gc:.0f}%, below {GC_LOW:.0f}")
+            side.append(f"{label} GC is {gc:.0f}%, below {GC_LOW:.0f}")
         elif gc > GC_TARGET[1]:
-            warnings.append(f"{label} GC is {gc:.0f}%, above "
-                            f"{GC_TARGET[1]:.0f}%")
+            side.append(f"{label} GC is {gc:.0f}%, above {GC_TARGET[1]:.0f}%")
         if longest_run(binding) >= LONGEST_RUN:
-            warnings.append(f"{label} has a run of {longest_run(binding)} "
-                            "identical bases")
+            side.append(f"{label} has a run of {longest_run(binding)} "
+                        "identical bases")
         if len(primer) > TARGET_LENGTH:
-            warnings.append(f"{label} primer is {len(primer)} bp, over "
-                            f"{TARGET_LENGTH}")
+            side.append(f"{label} primer is {len(primer)} bp, over "
+                        f"{TARGET_LENGTH}")
+    # The one warning that belongs to both oligos, because it is about the gap
+    # between them. It goes on both rows.
     gap = abs(tm_f - tm_r)
     if gap > MAX_PAIR_GAP:
-        warnings.append(
+        warnings["pair"].append(
             f"the pair is {gap:.1f} C apart and no pair got within "
             f"{MAX_PAIR_GAP:.0f} C; this is the closest there is, so treat it as "
             f"a starting point and finish it by hand")
@@ -196,29 +202,39 @@ def _describe(name, sequence, pair, adapters, pad):
 
 # Defined above rows_for_csv, which builds its dicts with these exact keys.
 # The two are kept in sync by hand, so change them together.
-CSV_COLUMNS = ["oligo_name", "sequence", "full_length_bp",
-               "bind_region_length_bp", "bind_region_gc_pct",
-               "Tm_phusion_C", "Tm_phusion_combined_C", "warnings"]
+#
+# There is no combined Tm column. A row is one oligo, and an annealing
+# temperature is a property of a pair, so the column was only ever right when
+# the oligos happened to be ordered two by two. The suggested temperature is
+# printed on screen instead, where a pair is still a pair.
+CSV_COLUMNS = ["oligo", "sequence", "full_length", "binding_region_length",
+               "bind_region_gc", "tm_phusion", "warnings"]
 
 
 def rows_for_csv(designed):
     """Two CSV rows per pair, one per oligo.
 
-    bind_region_gc_pct says what has always been measured: the GC of the
-    binding region only, not of the whole oligo. The flanks are fixed YTK
-    adapters, so their GC is not the primer designer's to fix.
+    bind_region_gc says what has always been measured: the GC of the binding
+    region only, not of the whole oligo. The flanks are fixed YTK adapters, so
+    their GC is not the primer designer's to fix.
     """
     rows = []
     for side in ("forward", "reverse"):
         binding = designed[f"{side}_binding"]
         rows.append({
-            "oligo_name": f"{designed['name']}_{side}",
+            "oligo": f"{designed['name']}_{side}",
             "sequence": designed[side],
-            "full_length_bp": len(designed[side]),
-            "bind_region_length_bp": len(binding),
-            "bind_region_gc_pct": round(gc_percent(binding)),
-            "Tm_phusion_C": round(designed[f"{side}_tm"]),
-            "Tm_phusion_combined_C": designed["annealing_temp"],
-            "warnings": "; ".join(designed["warnings"]),
+            "full_length": len(designed[side]),
+            "binding_region_length": len(binding),
+            "bind_region_gc": round(gc_percent(binding)),
+            "tm_phusion": round(designed[f"{side}_tm"]),
+            "warnings": "; ".join(designed["warnings"][side]
+                                  + designed["warnings"]["pair"]),
         })
     return rows
+
+
+def all_warnings(designed):
+    """Every warning for the pair, for the one table printed at the end."""
+    return (designed["warnings"]["forward"] + designed["warnings"]["reverse"]
+            + designed["warnings"]["pair"])

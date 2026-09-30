@@ -30,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(__file__).resolve().parent / "data"
 sys.path.insert(0, str(ROOT / "lib"))
+import enzymes  # noqa: E402
 import flanks  # noqa: E402
 import notes  # noqa: E402
 import snapgene as sg  # noqa: E402
@@ -163,7 +164,7 @@ class TestPTP412(unittest.TestCase):
         self.wanted = reference("pTP412")
 
     def test_the_gene_really_does_hold_an_extra_site(self):
-        self.assertTrue(clone.has_internal_site(FRAGMENTS["Pi_fim_NCS_c1"]))
+        self.assertTrue(enzymes.beyond_flanks(FRAGMENTS["Pi_fim_NCS_c1"]))
 
     def test_same_circle_as_the_reference(self):
         self.assertTrue(same_circle(self.wanted, self.built))
@@ -351,9 +352,9 @@ class TestGenBankEndToEnd(unittest.TestCase):
             sys.argv = argv
 
     def maps(self):
-        """The map folder is named after the backbone actually used, so a run
-        against another vector cannot be mistaken for an entry-vector run."""
-        return self.out / f"{clone.BACKBONE_NAME}_maps"
+        """One folder per backbone under plasmids/, so a run against another
+        vector cannot be mistaken for an entry-vector run."""
+        return self.out / "plasmids" / clone.BACKBONE_NAME
 
     def test_clone_writes_genbank_by_default(self):
         self.run_clone()
@@ -381,8 +382,17 @@ class TestGenBankEndToEnd(unittest.TestCase):
     def test_the_summary_carries_the_plasmid_name(self):
         self.run_clone()
         rows = (self.maps() / "summary.csv").read_text().splitlines()
-        self.assertEqual("name,part_type,plasmid,notes", rows[0])
-        self.assertIn("pTP412", rows[1])
+        self.assertEqual("plasmid,sequence,part_type,codon_opt,notes", rows[0])
+        self.assertTrue(rows[1].startswith("pTP412,Pi_fim_NCS_c1,"))
+
+    def test_the_format_follows_the_fragments_with_no_flag(self):
+        """The format is decided once, when the fragments are written. Reading it
+        back off those files is what stops a run coming out half GenBank and
+        half .dna."""
+        (Path(self.tmp.name) / "already_here.dna").write_bytes(b"")
+        self.run_clone()
+        self.assertEqual(["pTP412.dna", "summary.csv"],
+                         sorted(p.name for p in self.maps().iterdir()))
 
 
 class TestPartsTable(unittest.TestCase):
@@ -516,51 +526,42 @@ class TestAnnotation(unittest.TestCase):
             self.assertLess(feature["start"], len(self.built))
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
-class TestOrderNote(unittest.TestCase):
-    """The notes column of fragments/summary.csv is what a synthesis order is
-    placed from, so it must never claim a gene was clean when it was changed.
+class TestTheNote(unittest.TestCase):
+    """The notes column is built from facts and never read back apart.
 
-    The cell is a CSV field someone can edit in Excel. Matching it against a
-    fixed phrase used to drop `BsmBI site removed.` for its full stop, and the
-    all-clear was then printed over a gene that really had a site taken out.
+    The old version wrote prose and then parsed it again, which needed a
+    sentinel for "nothing to say" and a rule for carrying hand-edited clauses
+    through. A hand edit that changed the wording could then be misread, and the
+    all-clear was printed over a gene that really had a site taken out. There is
+    nothing to misread now: the facts travel in their own columns.
     """
 
-    CLEAN = "ATGAAACCCGGGTAA"
-    DIRTY = "ATGCGTCTCAAATAA"      # holds a BsmBI site
+    def test_nothing_done_and_nothing_left_gives_an_empty_note(self):
+        self.assertEqual("", notes.summarise(set(), set()))
 
-    def test_a_hand_edited_note_is_never_turned_into_the_all_clear(self):
-        for edited in ("BsmBI site removed.",
-                       "BsmBI Site Removed",
-                       "BsmBI site removed (checked by hand)"):
-            with self.subTest(edited):
-                self.assertNotEqual(notes.NO_SITES,
-                                    notes.for_order(self.CLEAN, edited))
+    def test_what_was_done_and_what_is_left_both_appear(self):
+        self.assertEqual("BsmBI site removed; BsaI site in the CDS",
+                         notes.summarise({"BsmBI"}, {"BsaI"}))
 
-    def test_a_hand_edited_note_is_carried_through_word_for_word(self):
-        self.assertEqual("BsmBI site removed.",
-                         notes.for_order(self.CLEAN, "BsmBI site removed."))
+    def test_codon_optimisation_names_its_method(self):
+        self.assertEqual("codon_opt (JCat); BsmBI site removed",
+                         notes.summarise({"BsmBI"}, set(), "JCat"))
 
-    def test_only_an_empty_cell_gives_the_all_clear(self):
-        self.assertEqual(notes.NO_SITES, notes.for_order(self.CLEAN, ""))
-        self.assertEqual(notes.NO_SITES,
-                         notes.for_order(self.CLEAN, notes.NO_SITES))
+    def test_the_removed_column_survives_a_round_trip(self):
+        self.assertEqual({"BsaI", "BsmBI"},
+                         notes.unpack(notes.pack({"BsmBI", "BsaI"})))
 
-    def test_a_site_in_the_cds_is_measured_and_not_inherited(self):
-        # Inheriting this half is what would let a stale note bless an unsafe
-        # fragment, so it is always read off the sequence being ordered.
-        self.assertEqual(f"BsmBI {notes.PRESENT}",
-                         notes.for_order(self.DIRTY, ""))
-        self.assertEqual(notes.NO_SITES,
-                         notes.for_order(self.CLEAN, f"BsaI {notes.PRESENT}"))
+    def test_an_empty_removed_column_means_nothing_was_removed(self):
+        self.assertEqual(set(), notes.unpack(""))
 
 
-class TestNotesAcrossSeveralInputFiles(unittest.TestCase):
-    """clone.py used to read its notes column from the first --input file only,
-    so a second file's genes lost the record of what was cleared out of them."""
+class TestWhatWasDoneComesFromTheInputFile(unittest.TestCase):
+    """clone.py used to copy the notes column along the chain, and read it from
+    the first --input file only, so a second fragment file's genes lost the
+    record of what was cleared out of them. It now reads the facts from --genes,
+    which is one file, so there is no second file to forget."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -568,30 +569,42 @@ class TestNotesAcrossSeveralInputFiles(unittest.TestCase):
         self.out = root / "out"
         self.first = root / "first.csv"
         self.second = root / "second.csv"
+        self.genes = root / "input.csv"
         self.first.write_text(
-            "name,sequence,plasmid,notes\n"
-            f"Pi_fim_NCS_c1,{FRAGMENTS['Pi_fim_NCS_c1']},pTP412,"
-            "BsmBI site removed\n")
+            "name,sequence\n"
+            f"Pi_fim_NCS_c1,{FRAGMENTS['Pi_fim_NCS_c1']}\n")
         self.second.write_text(
-            "name,sequence,plasmid,notes\n"
-            f"Pi_fim_NCS_c3,{FRAGMENTS['Pi_fim_NCS_c3']},pTP414,"
-            "BsaI site removed\n")
+            "name,sequence\n"
+            f"Pi_fim_NCS_c3,{FRAGMENTS['Pi_fim_NCS_c3']}\n")
+        self.genes.write_text(
+            "name,plasmid,sequence,removed,codon_opt_method\n"
+            f"Pi_fim_NCS_c1,pTP412,{GENES['Pi_fim_NCS_c1']},BsmBI,\n"
+            f"Pi_fim_NCS_c3,pTP414,{GENES['Pi_fim_NCS_c3']},BsaI,\n")
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_every_input_file_keeps_its_notes(self):
+    def test_every_fragment_file_keeps_what_was_done_to_its_genes(self):
         argv = sys.argv
         sys.argv = ["clone.py", "--input", str(self.first), str(self.second),
-                    "--outdir", str(self.out)]
+                    "--genes", str(self.genes), "--outdir", str(self.out)]
         try:
             with contextlib.redirect_stdout(io.StringIO()):
                 clone.main()
         finally:
             sys.argv = argv
 
-        summary = (self.out / f"{clone.BACKBONE_NAME}_maps" / "summary.csv")
-        rows = {row["name"]: row["notes"]
+        summary = self.out / "plasmids" / clone.BACKBONE_NAME / "summary.csv"
+        rows = {row["sequence"]: (row["plasmid"], row["notes"])
                 for row in csv.DictReader(summary.open())}
-        self.assertEqual({"Pi_fim_NCS_c1": "BsmBI site removed",
-                          "Pi_fim_NCS_c3": "BsaI site removed"}, rows)
+        # Both of these genes still hold a site of their own. That half is
+        # measured here rather than carried, so it shows up beside what was
+        # removed instead of being hidden by a stale column.
+        self.assertEqual(("pTP412", "BsmBI site removed; BsmBI site in the CDS"),
+                         rows["Pi_fim_NCS_c1"])
+        self.assertEqual(("pTP414", "BsaI site removed; BsaI site in the CDS"),
+                         rows["Pi_fim_NCS_c3"])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

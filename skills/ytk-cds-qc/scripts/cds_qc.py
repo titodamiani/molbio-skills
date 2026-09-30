@@ -5,16 +5,18 @@ BsaI site that would break Golden Gate?
 
     python3 cds_qc.py --input genes.csv
 
-Nothing is written and nothing is changed. Exits 1 if anything failed.
+Writes input.csv, a copy of what it read, and changes nothing. Whatever format
+the input was, that copy is the CSV every later step reads, so a FASTA or a .dna
+file does not have to be handled again further down. Exits 1 if anything failed.
 
 Asked for by name, and only then, it can also remove an internal cut site by
 swapping one codon for another that makes the same amino acid:
 
     python3 cds_qc.py --input genes.csv --remove-sites
 
-That writes corrected_genes.csv into the output folder and never touches the
-input. Every changed base is printed, and the protein is compared before and
-after. Without --outdir the results go in a ytk_output/ folder beside the input.
+That writes a corrected_genes/ folder and never touches the input. Every changed
+base is printed, and the protein is compared before and after. Without --outdir
+the results go in a ytk_output/ folder beside the input.
 """
 import argparse
 import csv
@@ -58,11 +60,13 @@ def main():
                              "keeping the protein the same. Writes a new file "
                              "and leaves the input alone")
     parser.add_argument("--outdir",
-                        help="where to write the corrected sequences "
-                             "(default: a ytk_output/ folder beside the input)")
+                        help="where to write input.csv and the corrected "
+                             "sequences (default: a ytk_output/ folder beside "
+                             "the input)")
     args = parser.parse_args()
 
     found = collect(args.input, args.feature)
+    outdir = output.folder(args.outdir, args.input[0])
     log = report.Report()
 
     print(f"{'sequence':28s} {'bp':>6s} {'codons':>6s} {'BsmBI':>5s} "
@@ -90,9 +94,10 @@ def main():
         log.add_warnings(name, remarks)
 
     print(f"\n{passed} of {len(found)} are clean Type 3 coding sequences.")
+    print(f"wrote {output.write_input_csv(found, outdir)}")
 
     if args.remove_sites:
-        return correct(found, log, output.folder(args.outdir, args.input[0]))
+        return correct(found, log, outdir)
 
     table = log.table()
     if table:
@@ -111,15 +116,14 @@ def correct(found, log, outdir):
     """Remove internal cut sites, and say exactly what changed.
 
     Only reached when --remove-sites was passed. The input file is never
-    touched: a new CSV is written beside it.
+    touched: a corrected_genes/ folder is written instead.
 
-    CSV and not FASTA, because a FASTA header cannot carry the plasmid name or
-    the notes column, and both have to reach the next step. A notes-free
-    carrier of corrected sequences is how an order file ends up claiming a gene
-    was always clean.
-
-    It sits beside input_genes.csv in the output folder, and its columns are in
-    the same order as the fragment summary, so the two read the same way round.
+    Two files, because they answer different questions. summary.csv is for
+    reading: the old sequence beside the new one. input_corrected.csv is the
+    handoff to the next step, and carries the plasmid name and the facts behind
+    the note - which enzymes were cleared, and how the codons were optimised -
+    each in its own column. A later step rebuilds the note from those columns
+    rather than reading the sentence back apart.
     """
     if log.blocked:
         print(f"\n{log.table()}\n\n{log.question()}")
@@ -127,20 +131,23 @@ def correct(found, log, outdir):
               "before a codon can be swapped safely.")
         sys.exit(1)
 
-    out = outdir / "corrected_genes.csv"
-    rows, touched, stubborn = [], 0, []
+    folder = outdir / "corrected_genes"
+    folder.mkdir(parents=True, exist_ok=True)
+    handoff, summary, touched, stubborn = [], [], 0, []
     for name, sequence, plasmid in found:
         # The enzymes have to be read off before the swap. remove_sites reports
-        # which bases moved and which sites are left, never which enzyme it
+        # which bases moved and which sites survive, never which enzyme it
         # cleared, so the removed set is what was there minus what remains.
         before = {enzyme for _, _, enzyme in silent.sites(sequence)}
         fixed, changes, left = silent.remove_sites(sequence)
         remaining = {enzyme for _, _, enzyme in left}
+        removed = before - remaining
 
-        # A note for every row, including the untouched ones. A blank note has
-        # to mean "nothing known", never "clean".
-        rows.append([name, plasmid or "", fixed,
-                     notes.after_removal(before, remaining)])
+        # No codon optimisation yet, so no method to report. The column is here
+        # so its shape is fixed before the feature lands.
+        handoff.append([name, plasmid or "", fixed, notes.pack(removed), ""])
+        summary.append([name, sequence, fixed, "false",
+                        notes.summarise(removed, remaining)])
 
         if changes:
             touched += 1
@@ -149,17 +156,26 @@ def correct(found, log, outdir):
         if left:
             stubborn.append(name)
 
-    with open(out, "w", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(["name", "plasmid", "sequence", "notes"])
-        writer.writerows(rows)
+    write_csv(folder / "input_corrected.csv",
+              ["name", "plasmid", "sequence", "removed", "codon_opt_method"],
+              handoff)
+    write_csv(folder / "summary.csv",
+              ["name", "input_sequence", "new_sequence", "codon_opt", "notes"],
+              summary)
 
-    print(f"\n{touched} of {len(found)} sequences changed. Wrote {out}")
+    print(f"\n{touched} of {len(found)} sequences changed. Wrote {folder}")
     print("Your input file was not touched.")
     if stubborn:
         print(f"\nStill holding a site, because no synonymous codon removes it: "
               f"{', '.join(stubborn)}. Those need doing by hand.")
         sys.exit(1)
+
+
+def write_csv(path, header, rows):
+    with open(path, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(header)
+        writer.writerows(rows)
 
 
 if __name__ == "__main__":

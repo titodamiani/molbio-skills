@@ -13,9 +13,11 @@ There is no case here for an input that is not a file on disk. A skill that is
 handed sequences in the chat writes them to a CSV first and then runs the normal
 path, which keeps one code path rather than two.
 """
+import csv
 from pathlib import Path
 
 FOLDER_NAME = "ytk_output"
+INPUT_NAME = "input.csv"
 
 
 def folder(outdir, input_path):
@@ -45,3 +47,20 @@ def _beside(input_path):
         if parent.name == FOLDER_NAME:
             return parent
     return input_path.parent / FOLDER_NAME
+
+
+def write_input_csv(rows, folder):
+    """A copy of the input, in the one shape every later step reads.
+
+    `rows` is what sequences.read returns: (name, sequence, plasmid or None).
+    Writing it here rather than copying the input file means a FASTA, a GenBank
+    map or a .dna file reaches the rest of the run as a CSV with a plasmid
+    column, so there is one input format downstream instead of four.
+    """
+    path = Path(folder) / INPUT_NAME
+    with open(path, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["name", "plasmid", "sequence"])
+        writer.writerows([name, plasmid or "", sequence]
+                         for name, sequence, plasmid in rows)
+    return path

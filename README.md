@@ -109,7 +109,7 @@ map. This is what SnapGene's cloning simulation does.
 
 **`ytk-verify-map`** - checks a map file, on its own or against a reference.
 
-> Check the maps in `out/pYTK001_maps/` against my hand-made ones in `refs/`.
+> Check the maps in `out/plasmids/pYTK001/` against my hand-made ones in `refs/`.
 
 **`ytk-workflow`** - all six, in order.
 
@@ -166,39 +166,51 @@ One folder, laid out the same way every time:
 
 ```
 out/
-  input_genes.csv        a copy of what you gave it
-  corrected_genes.csv    only when you asked for sites to be removed
-  primers.csv            two rows per gene, one per oligo
+  input.csv              a copy of what you gave it, as CSV whatever it was
+  corrected_genes/       only when you asked for sites to be removed
+    input_corrected.csv  what every later step reads
+    summary.csv          name, input_sequence, new_sequence, codon_opt, notes
+  ytk_primers.csv        two rows per gene, one per oligo
   fragments/
-    summary.csv          the synthesis order: name, part_type, plasmid, sequence, notes
+    summary.csv          the synthesis order: name, sequence, part_type, codon_opt, notes
     <gene>.gb            the flanked sequence, one map per gene
-  pYTK001_maps/
-    summary.csv          name, part_type, plasmid, notes
-    <plasmid>.gb         one labelled circular map per plasmid
+  plasmids/
+    pYTK001/
+      summary.csv        plasmid, sequence, part_type, codon_opt, notes
+      <plasmid>.gb       one labelled circular map per plasmid
 ```
 
-The map folder is named after the backbone you actually cloned into, so a run
-against another vector cannot be mistaken for an entry-vector run.
+There is one folder per backbone under `plasmids/`, named after the vector you
+actually cloned into, so a run against another vector cannot be mistaken for an
+entry-vector run.
+
+`input.csv` is written by the first step, not copied by hand, so a FASTA, a
+GenBank map or a `.dna` file all reach the rest of the run in the same shape.
 
 If you do not say where to put it, the folder is called `ytk_output/` and sits
 beside your input file. Every step prints the path it used.
 
 `fragments/summary.csv` is the file you place the synthesis order from. Its
-`notes` column says, per gene, what was cleared out of the CDS and what is still
-in it - for example `BsmBI site removed; BsaI site in the CDS`. The two are not
-exclusive: one enzyme can be swapped out while another stays, because no
-synonymous codon removes it. **The "still in it" half is always measured again on
-the sequence being ordered**, so a stale note can mislabel a safe fragment but
-can never hide a site. Anything else you write in that cell is carried through
-word for word: editing it in Excel cannot turn it into an all-clear.
+`sequence` column is the flanked sequence: what you paste into the order form.
+Its `notes` column says, per gene, what was done to it and what is still in it -
+for example `BsmBI site removed; BsaI site in the CDS`. These are not exclusive:
+one enzyme can be swapped out while another stays, because no synonymous codon
+removes it. **An empty note means the gene was clean and nothing was done to
+it.**
 
-Maps are GenBank by default, which SnapGene also opens. Add `--format dna` to
-`ytk-add-overhangs` and `ytk-clone` for SnapGene `.dna` files instead. The
-plasmid is identical either way.
+The note is built from facts that each have their own column, so nothing has to
+read a sentence back apart. **The "still in it" half is always measured again on
+the sequence being ordered**, so a stale column can mislabel a safe fragment but
+can never hide a site.
+
+Maps are GenBank by default, which SnapGene also opens. For SnapGene `.dna`
+files, add `--format dna` to `ytk-add-overhangs`. **That is the only place you
+choose**: `ytk-clone` matches the fragments by itself, so a run cannot come out
+half one format and half the other. The plasmid is identical either way.
 
 **Your sequences are never changed unless you ask.** There is one exception, and
 you have to name it: `ytk-cds-qc --remove-sites` swaps a codon to remove an
-internal BsmBI or BsaI site. It writes `corrected_genes.csv`, leaves yours alone, prints
+internal BsmBI or BsaI site. It writes `corrected_genes/`, leaves yours alone, prints
 every changed base, and refuses if the protein would change at all. On the two
 real genes in `tests/data/` it changes one base.
 

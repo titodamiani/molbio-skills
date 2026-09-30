@@ -5,8 +5,9 @@ pYTK001 entry vector in a BsmBI Golden Gate reaction.
 
     python3 design_primers.py --input genes.csv
 
-One CSV comes out, two rows per sequence. Input sequences are never changed.
-Without --outdir it goes in a ytk_output/ folder beside the input.
+One CSV comes out, ytk_primers.csv, two rows per sequence. Input sequences are
+never changed. Without --outdir it goes in a ytk_output/ folder beside the
+input.
 """
 import argparse
 import csv
@@ -58,7 +59,7 @@ def main():
                         help=".fa, .fasta, .csv, .gb, .gbk or .dna")
     parser.add_argument("--feature", help="which feature holds the CDS, for map files")
     parser.add_argument("--outdir",
-                        help="where to write primers.csv "
+                        help="where to write ytk_primers.csv "
                              "(default: a ytk_output/ folder beside the input)")
     args = parser.parse_args()
 
@@ -66,7 +67,7 @@ def main():
     found = collect(args.input, args.feature)
     log = report.Report()
 
-    rows = []
+    rows, designs = [], []
     for name, sequence in found:
         faults = cds.problems(sequence)
         if faults:
@@ -77,21 +78,28 @@ def main():
         if "blocked" in designed:
             log.block(name, designed["blocked"])
             continue
-        log.add_warnings(name, designed["warnings"])
+        log.add_warnings(name, primers.all_warnings(designed))
+        designs.append(designed)
         rows += primers.rows_for_csv(designed)
 
-    if rows:
-        out = output.folder(args.outdir, args.input[0]) / "primers.csv"
+    if designs:
+        out = output.folder(args.outdir, args.input[0]) / "ytk_primers.csv"
         with open(out, "w", newline="") as fh:
             writer = csv.DictWriter(fh, fieldnames=primers.CSV_COLUMNS)
             writer.writeheader()
             writer.writerows(rows)
-        print(f"{len(rows) // 2} pairs -> {out}\n")
-        print(f"{'name':32s} {'bp':>3s} {'bind':>4s} {'GC%':>4s} {'Tm':>3s} {'Ta':>3s}")
+        print(f"{len(designs)} pairs -> {out}\n")
+        print(f"{'oligo':32s} {'bp':>3s} {'bind':>4s} {'GC%':>4s} {'Tm':>3s}")
         for row in rows:
-            print(f"{row['oligo_name'][:32]:32s} {row['full_length_bp']:3d} "
-                  f"{row['bind_region_length_bp']:4d} {row['bind_region_gc_pct']:4d} "
-                  f"{row['Tm_phusion_C']:3d} {row['Tm_phusion_combined_C']:3d}")
+            print(f"{row['oligo'][:32]:32s} {row['full_length']:3d} "
+                  f"{row['binding_region_length']:4d} {row['bind_region_gc']:4d} "
+                  f"{row['tm_phusion']:3d}")
+        # An annealing temperature belongs to a pair, not to an oligo, so it is
+        # printed here and not in the CSV, where a row is one oligo.
+        print(f"\n{'pair':32s} {'anneal at':>9s}")
+        for designed in designs:
+            print(f"{designed['name'][:32]:32s} {designed['annealing_temp']:8d} C")
+        print("\nCheck each pair on the NEB Tm calculator before you order.")
 
     table = log.table()
     if table:

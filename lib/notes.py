@@ -1,64 +1,44 @@
-"""The notes column: what was cleared out of a CDS, and what is still in it.
+"""The notes column: one sentence saying what was done to a sequence, and what
+is still in it.
 
-One module, because the wording travels between two skills. `ytk-cds-qc` writes
-it when it removes a cut site, and `ytk-add-overhangs` carries it into the order
-file. If the two ever disagreed about the phrasing, the merge in `for_order`
-would silently drop half of it.
+    codon_opt (JCat); BsmBI site removed; BsaI site in the CDS
 
-The two facts are **not** exclusive. A gene can have its BsmBI site swapped out
-while a BsaI site stays put, because no synonymous codon removes it. So a note
-joins them rather than picking one:
+Built from facts, and never read back out of a cell. Every file that carries a
+note carries the facts behind it in their own columns - `removed` and
+`codon_opt_method` - so a later step rebuilds the sentence instead of parsing
+it. That is why there is no sentinel here for "nothing to say": an empty note is
+an empty string.
 
-    BsmBI site removed; BsaI site in the CDS
+The clauses are not exclusive. A gene can have its BsmBI site swapped out while
+a BsaI site stays put, because no synonymous codon removes it, so a note joins
+them rather than picking one.
 """
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import enzymes
-
-NO_SITES = "input CDS contained no inner BsmBI/BsaI cut sites"
-REMOVED = "site removed"
-PRESENT = "site in the CDS"
+# Inside the `removed` column, which holds enzyme names and not prose.
+SEPARATOR = ";"
 
 
-def _join(clauses):
-    return "; ".join(clauses) if clauses else NO_SITES
+def summarise(removed, present, codon_opt_method=None):
+    """The notes cell for one sequence.
 
-
-def after_removal(before, remaining):
-    """The note for a sequence that has just been through silent.remove_sites.
-
-    `before` and `remaining` are sets of enzyme names. What was cleared is what
-    was there minus what is left, because remove_sites reports which bases moved
-    and which sites survive, never which enzyme it cleared.
+    `removed` and `present` are collections of enzyme names. `removed` has to
+    travel in its own column, because a site that was swapped out cannot be
+    measured again afterwards. `present` is always measured fresh on the
+    sequence in hand, so a stale column can mislabel a safe fragment but can
+    never hide a site and bless an unsafe one.
     """
-    return _join([f"{enzyme} {REMOVED}" for enzyme in sorted(before - remaining)]
-                 + [f"{enzyme} {PRESENT}" for enzyme in sorted(remaining)])
+    clauses = []
+    if codon_opt_method:
+        clauses.append(f"codon_opt ({codon_opt_method})")
+    clauses += [f"{enzyme} site removed" for enzyme in sorted(removed)]
+    clauses += [f"{enzyme} site in the CDS" for enzyme in sorted(present)]
+    return "; ".join(clauses)
 
 
-def for_order(sequence, inherited):
-    """The note for the order file, from the input's note plus the sequence.
+def pack(enzyme_names):
+    """Enzyme names as the `removed` column holds them."""
+    return SEPARATOR.join(sorted(enzyme_names))
 
-    What is still in the CDS is never inherited: it is measured again, here, on
-    the sequence actually being ordered. A stale or hand-edited notes column can
-    therefore mislabel a safe fragment, but it can never hide a site and bless an
-    unsafe one. This file is what a synthesis order is placed from, so that
-    asymmetry is the whole point.
 
-    Everything else in the cell is carried through word for word, because the
-    notes column is a CSV cell someone can edit in Excel. Matching it against a
-    fixed phrase would drop `BsmBI site removed.` for its full stop, and the
-    all-clear would then be printed over a gene that really was changed. Only an
-    empty cell can produce the all-clear.
-    """
-    kept = []
-    for clause in inherited.split(";"):
-        clause = clause.strip()
-        if not clause or clause == NO_SITES:
-            continue
-        if clause.endswith(PRESENT):
-            continue
-        kept.append(clause)
-    kept += [f"{enzyme} {PRESENT}" for enzyme in enzymes.in_sequence(sequence)]
-    return _join(kept)
+def unpack(cell):
+    """The `removed` column back as a set of enzyme names."""
+    return {name.strip() for name in cell.split(SEPARATOR) if name.strip()}
