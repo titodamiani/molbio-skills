@@ -301,12 +301,6 @@ python3 tests/test_inputs.py    # the four formats, and asking once
 python3 tests/test_codons.py    # the codon table, the rewrite, the measurements
 ```
 
-All five in one go:
-
-```
-python3 -m unittest discover -s tests -t .
-```
-
 `tests/test_primers.py` measures against a real oligo sheet and gene list. Those
 hold unpublished sequences, so they are not in the repo: those tests are skipped,
 with a message, when the files are not on your machine.
