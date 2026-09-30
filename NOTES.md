@@ -150,8 +150,8 @@ has to come back too.
 ## Removing a cut site: one base is usually enough
 
 `lib/silent.py` swaps a codon for a synonym to remove an internal BsmBI or BsaI
-site. It is the only code here that changes a sequence, and only
-`ytk-cds-qc --remove-sites` calls it.
+site. It is one of the two pieces of code here that change a sequence - `lib/codons.py`
+is the other - and only `ytk-remove-cut-sites` calls it.
 
 On both real genes in `tests/data/` it needs **one base**, at the third position
 of a codon: `GAG -> GAA` at base 339 of Pi_fim_NCS_c1, and `GGT -> GGA` at base
@@ -230,3 +230,115 @@ is what the oligo sheet was filled in from. primer3 reads consistently lower.
 Fitted once, over the 45 sound rows of `oligo_stocks`. After it, every one of
 those 45 lands within 0.51 C of the NEB value. `tests/test_primers.py` fails if it
 drifts. **Do not tune it per primer.**
+
+## Codon optimisation is the weak part, and it is meant to look weak
+
+`lib/codons.py` rewrites every codon as the most-used codon for its amino acid.
+That is all it does. It is worth knowing why it does so little.
+
+**A synthesis company's optimiser is better.** Twist, IDT and GenScript all
+optimise at order time against their own synthesis-feasibility model, and they
+will not build a sequence their own screen rejects. Argmax recoding is a worse
+algorithm: it flattens the rare-codon structure real genes use for the initiation
+ramp and for co-translational folding pauses, and there are published cases of
+"optimised" genes expressing below native. `ytk-codon-optimise` exists for the
+cases where you need the sequence before the order goes in, or need exactly which
+codons moved on the record. Its SKILL.md says so in the opening paragraph, on
+purpose.
+
+**GC falls a long way, and nothing fixes it.** Yeast's preferred codons are
+AT-rich. On the four real genes in `tests/data/` GC goes 47.3 -> 30.3, 51.2 ->
+32.7, 48.3 -> 31.8, 53.8 -> 33.4. CAI goes 0.63 -> 1.00, 0.61 -> 1.00, 0.63 ->
+1.00, 0.58 -> 0.99. Both numbers are printed side by side because the trade is
+the whole story. Those figures are here so drift is visible if the table changes.
+
+**The rewrite really can create a cut site, so step 1c is not optional.** Six
+three-codon windows of yeast top codons hold one, all of them BsaI, and four of
+those start with Trp: Trp-Ser-Gln recodes to `TGGTCTCAA`, which is `GGTCTC` plus a
+base. `ytk-codon-optimise` exits 1 when it has done that, and
+`test_the_rewrite_can_create_a_cut_site` keeps the case on record rather than
+leaving it as a worry nobody checked. It is one base to clear afterwards.
+
+**Repeats get worse, not better.** Identical peptide motifs recode to identical
+DNA. One case is handled - the same codon is never used more than twice running,
+so a poly-Q tract comes out `CAACAACAG` and not `CAACAACAA` - and a repeated motif
+is not, because avoiding that needs a search over the whole sequence. Measured and
+reported, never fixed.
+
+## Why there is no DNA Chisel, yet
+
+DNA Chisel would give GC targeting and repeat avoidance for free, and it was the
+obvious choice until the detail. **Its randomness lives in numpy's global RNG, and
+reproducibility across Python sessions is an open bug** -
+github.com/Edinburgh-Genome-Foundry/DnaChisel issue 13: seeding fixes it inside
+one session and not between them, with no maintainer answer.
+
+The randomness only engages once the constraints you want it for go on.
+`CodonOptimize(method="use_best_codon")` alone is a direct substitution and
+deterministic; add `AvoidPattern`, `EnforceGCContent` or `UniquifyAllKmers` and it
+becomes a local search. So adopting it today buys the dependency now and the bug
+at the exact moment the constraints go on, for DNA somebody pays to synthesise.
+
+**The seam is there instead.** The rewrite is behind `codons.recode(sequence)`.
+Adding GC targeting means adding `lib/chisel.py` as a second backend and an
+`--engine` flag, and no SKILL.md changes. The flag is deliberately absent until
+there is a second engine to pick. Do not re-litigate this without re-reading
+issue 13 first.
+
+## There is no seed, and there must not be one
+
+Weighted sampling from the usage table would match natural codon distribution
+better than argmax. It is rejected anyway: it makes the output depend on a seed
+somebody has to carry, on CPython's `random` staying stable, and on the order
+values are drawn in. "There is no seed to remember" is a stronger guarantee than
+any distribution argument, for a tool whose output gets ordered from a vendor.
+
+What holds the output still, in order of how easily each could be broken:
+
+- **Ties break alphabetically by codon.** The shares in the table are rounded to
+  two places, so ties are real - human arginine has `AGA` and `AGG` both at 0.21.
+  Without the rule the winner follows dict insertion order.
+- **The package version is in the `codon_opt_method` column**, because the table
+  lives in the package. A bump that moves one codon would otherwise change a
+  sequence with nothing in the output saying why.
+- **One golden sequence is pinned as a literal** in `tests/test_codons.py`.
+- The loop runs left to right, never backtracks, and reads no set.
+
+## Biopython already has CAI, and almost has the rewrite
+
+`Bio.SeqUtils.CodonAdaptationIndex` implements Sharp & Li (1987). It is used for
+CAI, so the numbers are comparable with anyone else's. Two things to know:
+
+**The stop codons are deliberately left out of the index.** `calculate()` skips a
+stop codon only when the index has no weight for it. An index built the usual way,
+from whole genes, does carry stop weights, so it scores the terminator as though a
+gene could have chosen a different one - and the same gene then scores differently
+depending on whether it ends `TAA` or `TGA`. Sharp & Li exclude it.
+`metrics._index` therefore builds from the 61 sense codons, and
+`test_top_codons_score_one` is the check that this is right: with the stops in, an
+all-top-codon sequence scored 0.956 instead of 1.0.
+
+**`optimize()` is not used, though it is the same algorithm.** It replaces the
+stop codon with whichever stop is most used, where a gene here keeps its own, and
+on a tie it either raises or picks silently rather than by a stated rule. So
+`lib/codons.py` mirrors it in about fifteen lines, and
+`test_it_agrees_with_biopython_on_the_interior` pins the two together on the
+codons where they should agree. `optimize()` needs stop weights, so that test
+builds its own full index rather than weakening the one CAI uses.
+
+## CAI cannot tell you which organism a gene was optimised for
+
+This looked like a free feature - measure CAI against yeast, E. coli and human,
+and the highest one names the source. It is wrong, and `input.csv` carries one CAI
+column for that reason.
+
+CAI is a geometric mean of each codon's share of its own family, so **a table with
+more even codon usage scores every sequence higher.** The human table is flatter
+than the yeast one: mean weight 0.73 against 0.66. A random ORF that nothing
+optimised scores 0.638 against human and 0.599 against yeast - the same ranking
+the four real fungal genes in `tests/data/` get. The columns would have measured
+the shape of the tables and looked like they measured the gene.
+
+Comparing codon usage between organisms properly means comparing the usage
+frequencies or RSCU directly, not CAI. Nothing here needs that, because the only
+question this plugin has to answer is whether a gene is already yeast-adapted.

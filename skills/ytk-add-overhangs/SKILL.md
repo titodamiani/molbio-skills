@@ -77,9 +77,10 @@ because `ytk-clone` names its output files from it.
 Per gene, what was done to it and what is still in it. **Empty when the gene was
 clean and nothing was done.**
 
-- `codon_opt (<method>)` - when the codons were optimised
+- `codon_opt (<method>)` - when the codons were optimised, read from the
+  `codon_opt_method` column of the input file, which `ytk-codon-optimise` writes
 - `BsmBI site removed` - per enzyme cleared, read from the `removed` column of
-  the input file, which `ytk-cds-qc --remove-sites` writes
+  the input file, which `ytk-remove-cut-sites` writes
 - `BsaI site in the CDS` - per enzyme still there
 
 These are not exclusive, so a note can read

@@ -249,12 +249,26 @@ class TestTheInputCopy(unittest.TestCase):
         with open(path, newline="") as fh:
             return list(csv.DictReader(fh))
 
-    def test_the_columns_are_always_the_same_three(self):
+    def test_the_columns_are_always_the_same(self):
+        """Whatever the input format was, the copy has one shape."""
         for source in ("genes.fasta", "genes.csv", "pTP412.dna"):
             with self.subTest(source):
                 rows = self.copy_of(DATA / source)
-                self.assertEqual(["name", "plasmid", "sequence"],
-                                 list(rows[0]))
+                self.assertEqual(output.HEADER, list(rows[0]))
+
+    def test_the_measurements_ride_along_on_the_row(self):
+        """Measured once here, so no later step has to measure again."""
+        row = self.copy_of(DATA / "genes.csv")[0]
+        self.assertTrue(float(row["gc"]) > 0)
+        self.assertTrue(float(row["cai_scer"]) > 0)
+        self.assertEqual(row["bsmbi"], "1")
+
+    def test_the_columns_a_fixing_step_fills_start_empty(self):
+        """ytk-cds-qc cannot change a sequence, so it has nothing to put here."""
+        for row in self.copy_of(DATA / "genes.csv"):
+            with self.subTest(row["name"]):
+                self.assertEqual("", row["removed"])
+                self.assertEqual("", row["codon_opt_method"])
 
     def test_a_fasta_becomes_a_csv_with_an_empty_plasmid_column(self):
         rows = self.copy_of(DATA / "genes.fasta")

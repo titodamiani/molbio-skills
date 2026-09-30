@@ -767,5 +767,97 @@ class TestThePartTypeTables(unittest.TestCase):
             flanks.junctions("custom")
 
 
+class TestTheWholeFixingChain(unittest.TestCase):
+    """ytk-cds-qc, then ytk-codon-optimise, then ytk-remove-cut-sites, then step 2.
+
+    Closes the loop the empty codon_opt columns were left open for: the method
+    string has to reach fragments/summary.csv, and the two fixing skills have to
+    write files step 2 can read without knowing which of them ran.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = Path(self.tmp.name)
+        self.step("ytk-cds-qc", "cds_qc.py", "--input", str(DATA / "genes.csv"))
+        self.step("ytk-codon-optimise", "codon_optimise.py",
+                 "--input", str(self.out / "input.csv"))
+        self.step("ytk-remove-cut-sites", "remove_cut_sites.py",
+                 "--input", str(self.out / "optimised_genes" / "input_optimised.csv"))
+        self.step("ytk-add-overhangs", "add_overhangs.py", "--type", "3",
+                 "--input", str(self.out / "corrected_genes" / "input_corrected.csv"))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def step(self, skill, script, *args):
+        """Run one skill's script, quietly. Its exit code is not the point here.
+
+        ytk-cds-qc exits 1 on a gene with a cut site, which two of these have,
+        and that is the behaviour the chain exists to deal with rather than a
+        failure of the chain.
+        """
+        module = load(ROOT / "skills" / skill / "scripts" / script)
+        argv = sys.argv
+        sys.argv = [script, "--outdir", str(self.out)] + list(args)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                module.main()
+        except SystemExit:
+            pass
+        finally:
+            sys.argv = argv
+
+    def rows(self, *parts):
+        with open(self.out.joinpath(*parts), newline="") as fh:
+            return list(csv.DictReader(fh))
+
+    def test_the_method_reaches_the_synthesis_order(self):
+        for row in self.rows("fragments", "summary.csv"):
+            with self.subTest(row["name"]):
+                self.assertEqual("true", row["codon_opt"])
+                self.assertTrue(row["notes"].startswith("codon_opt (argmax/4932/"))
+
+    def test_a_site_the_rewrite_cleared_is_still_on_the_record(self):
+        """It cannot be measured off the new sequence, so it has to be carried."""
+        notes_by_gene = {row["name"]: row["notes"]
+                         for row in self.rows("fragments", "summary.csv")}
+        self.assertIn("BsmBI site removed", notes_by_gene["Pi_fim_NCS_c1"])
+        self.assertIn("BsaI site removed", notes_by_gene["Pi_fim_NCS_c3"])
+
+    def test_the_two_fixing_skills_write_the_same_shape(self):
+        optimised = self.rows("optimised_genes", "input_optimised.csv")
+        corrected = self.rows("corrected_genes", "input_corrected.csv")
+        self.assertEqual(list(optimised[0]), list(corrected[0]))
+
+    def test_the_plasmid_names_survive_both_fixes(self):
+        plasmids = [row["plasmid"]
+                    for row in self.rows("corrected_genes", "input_corrected.csv")]
+        self.assertIn("pTP412", plasmids)
+
+    def test_the_measurements_are_retaken_after_the_rewrite(self):
+        before = {r["name"]: r for r in self.rows("input.csv")}
+        after = {r["name"]: r
+                 for r in self.rows("optimised_genes", "input_optimised.csv")}
+        for name in before:
+            with self.subTest(name):
+                # Yeast's favourite codons are AT-rich, so GC always falls.
+                self.assertLess(float(after[name]["gc"]), float(before[name]["gc"]))
+                self.assertGreater(float(after[name]["cai_scer"]),
+                                   float(before[name]["cai_scer"]))
+
+    def test_every_changed_codon_is_on_the_record(self):
+        """The console prints a table only for a small gene, so the file is the record."""
+        changes = self.rows("optimised_genes", "changes.csv")
+        self.assertTrue(changes)
+        for row in changes:
+            with self.subTest(row["name"]):
+                self.assertNotEqual(row["was"], row["now"])
+
+    def test_nothing_still_holds_a_cut_site(self):
+        for row in self.rows("corrected_genes", "input_corrected.csv"):
+            with self.subTest(row["name"]):
+                self.assertEqual([], enzymes.in_sequence(row["sequence"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

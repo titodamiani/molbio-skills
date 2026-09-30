@@ -5,11 +5,14 @@ description: Run the whole MoClo Yeast Toolkit (YTK) job for one coding sequence
 
 # The whole YTK job
 
-Runs the six skills in order, on one sequence or on a batch.
+Runs the skills in order, on one sequence or on a batch. Steps 1b and 1c are the
+only optional ones, and the only ones that change DNA.
 
 | Step | Skill | Gives |
 |---|---|---|
-| 1 | `ytk-cds-qc` | are these valid Type 3 coding sequences? |
+| 1 | `ytk-cds-qc` | are these valid Type 3 coding sequences, and what are the numbers? |
+| 1b | `ytk-codon-optimise` | *optional* - the genes rewritten for yeast |
+| 1c | `ytk-remove-cut-sites` | *optional* - internal BsmBI/BsaI sites swapped out |
 | 2 | `ytk-add-overhangs` | the flanked fragments, and the synthesis order |
 | 3 | `ytk-design-primers` | one CSV of primer pairs, 4-base pad |
 | 4 | `ytk-clone` | the part plasmid maps |
@@ -22,8 +25,15 @@ Ask for, and never guess:
 
 - **the gene file** (`.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`)
 - **where to put the output**
-- **whether to remove internal BsmBI/BsaI sites.** This is the one question that
-  changes the DNA. Never assume it.
+- **whether to codon optimise the genes for yeast.** Changes the DNA, hundreds
+  of bases per gene. Never assume it. If they say yes, say first that a synthesis
+  company's own optimiser is better and free, and that GC will drop a long way.
+- **whether to remove internal BsmBI/BsaI sites.** Changes the DNA, usually one
+  base per site. Never assume it.
+
+Those two are the only questions that change DNA, and step 1 tells you whether
+either is worth asking: `bsmbi` and `bsai` above zero means a site has to go, and
+a low `cai_scer` means optimising is worth offering. Show the table and ask once.
 
 Everything else has a default that is right nearly always, so do not ask about
 it. The part type defaults to 3 and every step prints the type it used. Ask about
@@ -61,6 +71,7 @@ Use the ytk-workflow skill to run the full YTK workflow on these genes.
 Input:   /path/to/genes.csv
 Output:  /path/to/output/
 Part type (default 3):
+Codon optimise for S. cerevisiae: [True/False]
 Remove internal BsmBI/BsaI sites in the CDS: [True/False]
 ```
 
@@ -70,8 +81,12 @@ Always this, whatever the input was:
 
 ```
 OUTPUT/
-  input.csv              a copy of the input, as CSV whatever it was
-  corrected_genes/       only when sites were removed
+  input.csv              a copy of the input, measured, as CSV whatever it was
+  optimised_genes/       only when step 1b ran
+    input_optimised.csv  what step 1c then reads
+    summary.csv          the old sequence beside the new one
+    changes.csv          one row per changed codon
+  corrected_genes/       only when step 1c ran
     input_corrected.csv  what every later step reads
     summary.csv          the old sequence beside the new one
   ytk_primers.csv        two rows per gene, one per oligo
@@ -97,31 +112,53 @@ ENZYME=BsmBI
 MAPS="$OUT/plasmids/$BACKBONE"
 ```
 
-**Step 1 — check the sequences.**
-
-```
-python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-cds-qc/scripts/cds_qc.py" --input genes.csv
-```
-
-If anything fails here, stop and show the table. Do not carry on with a
-sequence that is not a valid Type 3 CDS.
-
-An internal BsmBI or BsaI site is a warning, not a failure. Show the table and
-ask once whether to remove them. **If they say yes:**
+**Step 1 — check and measure the sequences.**
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-cds-qc/scripts/cds_qc.py" \
-    --input genes.csv --remove-sites --outdir "$OUT"
+    --input genes.csv --outdir "$OUT"
 ```
 
-That writes `$OUT/corrected_genes/`. **Every later step then reads
-`input_corrected.csv` from there, not `input.csv`.** Steps 3, 5 and 6 included:
-primers designed from the original sequence would not match the corrected gene,
-and a map verified against the old sequence would report a difference that is
-not there.
+If anything fails here, stop and show the table. Do not carry on with a
+sequence that is not a valid Type 3 CDS. **This step cannot change a sequence**,
+so there is nothing to undo.
 
-Below, `GENES` means `$OUT/input.csv` normally and
-`$OUT/corrected_genes/input_corrected.csv` when the removal step ran.
+An internal BsmBI or BsaI site is a warning, not a failure. Show the table, which
+also carries `cai_scer`, `gc` and the repeat lengths, and ask the two questions
+from the top once for the whole batch.
+
+**Step 1b — codon optimise. Only if they asked.**
+
+```
+python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-codon-optimise/scripts/codon_optimise.py" \
+    --input "$OUT/input.csv" --outdir "$OUT"
+```
+
+Writes `$OUT/optimised_genes/`. Show the GC warning it prints: yeast's preferred
+codons are AT-rich, so GC falls to around 32%, and that is worth knowing before
+anyone orders DNA. **Step 1c is then not optional**, because a rewrite can create
+a cut site. The script exits 1 if it did, and prints the command.
+
+**Step 1c — remove internal cut sites. If they asked, or if 1b ran.**
+
+```
+python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-remove-cut-sites/scripts/remove_cut_sites.py" \
+    --input "$GENES" --outdir "$OUT"
+```
+
+Writes `$OUT/corrected_genes/`. Point `--input` at `optimised_genes/input_optimised.csv`
+when 1b ran, so the method it recorded is carried forward, and at `input.csv`
+otherwise.
+
+**Every later step reads the newest of these three files.** Steps 3, 5 and 6
+included: primers designed from the original sequence would not match a changed
+gene, and a map verified against the old sequence would report a difference that
+is not there.
+
+Below, `GENES` means the last file written by steps 1, 1b and 1c - `$OUT/input.csv`
+when neither optional step ran, then `$OUT/optimised_genes/input_optimised.csv`,
+then `$OUT/corrected_genes/input_corrected.csv`. All three have the same columns,
+so nothing after this has to know which of them it was handed.
 
 **Step 2 — add the flanks.**
 
@@ -194,15 +231,21 @@ Steps 1, 3 and 4 can stop. When one does:
   one table. Do not paraphrase it.
 - **Ask once**, not once per sequence.
 - **Never fix a sequence to get past a check.** A cut site inside a coding
-  sequence has to be removed deliberately, and only when asked.
+  sequence has to be removed deliberately, and only when asked. The same goes for
+  rewriting the codons, which moves hundreds of bases.
+- **Never run both optional steps because one was asked for.** Codon optimising
+  forces the removal step; asking for the removal step does not invite the other.
 
 ## Report at the end
 
 - how many pairs of primers, and where the CSV is
 - how many maps, and where
-- which genes had a site removed, and which still hold one, straight from the
-  `notes` column of `fragments/summary.csv`. An empty note means the gene was
-  clean and nothing was done to it.
+- which genes had a site removed, which were codon optimised and with which
+  table, and which still hold a site, straight from the `notes` column of
+  `fragments/summary.csv`. An empty note means the gene was clean and nothing was
+  done to it.
+- if step 1b ran: the GC before and after, and the number of codons changed. Point
+  at `optimised_genes/changes.csv` rather than claiming every base was shown.
 - any primer pair that would not balance within 2 C, which needs finishing by
   hand
 - which part type, backbone and enzyme were used

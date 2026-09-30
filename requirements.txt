@@ -6,3 +6,4 @@
 biopython==1.88
 primer3-py==2.3.1
 pydna==5.5.16
+python-codon-tables==0.1.18

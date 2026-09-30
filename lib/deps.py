@@ -6,7 +6,8 @@ from pathlib import Path
 REQUIREMENTS = Path(__file__).resolve().parents[1] / "requirements.txt"
 
 # Import name -> pip name, for the ones that differ.
-PIP_NAMES = {"Bio": "biopython", "primer3": "primer3-py"}
+PIP_NAMES = {"Bio": "biopython", "primer3": "primer3-py",
+             "python_codon_tables": "python-codon-tables"}
 
 
 def require(*modules):

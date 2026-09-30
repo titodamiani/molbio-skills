@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "ytk-skills",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Build, label and check plasmid maps, SnapGene or GenBank, for MoClo Yeast Toolkit cloning.",
   "author": {
     "name": "Tito Damiani",

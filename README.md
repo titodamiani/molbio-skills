@@ -74,6 +74,7 @@ Use the ytk-workflow skill to run the full YTK workflow on these genes.
 
 Input:   /path/to/genes.csv
 Output:  /path/to/output/
+Codon optimise for S. cerevisiae: [True/False]
 Remove internal BsmBI/BsaI sites in the CDS: [True/False]
 ```
 
@@ -83,17 +84,37 @@ input; a row without one falls back to `<gene>_<backbone>`.
 
 Ask for "the ytk-workflow prompt" any time and it will print this back to you.
 
-## The seven skills
+## The nine skills
 
-Each one takes one sequence or a batch.
+Each one takes one sequence or a batch. Two of them change DNA, and only when you
+ask in that message.
 
-**`ytk-cds-qc`** - are these valid Type 3 coding sequences, and do any hide a
-BsmBI or BsaI site?
+**`ytk-cds-qc`** - are these valid Type 3 coding sequences, do any hide a BsmBI or
+BsaI site, and what are the numbers? GC, the worst 50-base GC window, the longest
+run of one base, the longest exact repeat and the yeast codon adaptation index all
+go into `input.csv` beside each sequence. **It cannot change a sequence.**
 
 > Check the genes in `candidates.fasta` before I order anything.
 
+**`ytk-remove-cut-sites`** - swaps one codon for another that makes the same amino
+acid, so an internal BsmBI or BsaI site goes away and the protein does not. One
+base per site on a real gene.
+
 > That gene has a BsmBI site. Remove it with a silent codon change and show me
 > what you changed.
+
+**`ytk-codon-optimise`** - rewrites every codon as yeast's most-used codon for
+that amino acid, keeping the protein and the gene's own start and stop codon.
+
+> Codon optimise these four genes for yeast and tell me what it cost.
+
+If you are sending the gene to a synthesis company anyway, **their optimiser is
+better than this one and free.** This is for when you need the sequence before the
+order goes in, or need exactly which codons moved on the record. Two things get
+worse and neither is fixed: GC falls a long way, because yeast's favourite codons
+are AT-rich - on the real genes in `tests/data/` it goes from 47-54% to 30-33% -
+and repeated peptide motifs become repeated DNA. Both are measured and printed.
+`ytk-remove-cut-sites` has to run afterwards, because a rewrite can create a site.
 
 **`ytk-add-overhangs`** - puts the YTK flanks on a sequence, so you can order the
 whole fragment from a synthesis company.
@@ -176,7 +197,11 @@ One folder, laid out the same way every time:
 
 ```
 out/
-  input.csv              a copy of what you gave it, as CSV whatever it was
+  input.csv              a copy of what you gave it, measured, as CSV whatever it was
+  optimised_genes/       only when you asked for codon optimisation
+    input_optimised.csv  what the cut-site step then reads
+    summary.csv          name, input_sequence, new_sequence, codon_opt, notes
+    changes.csv          one row per changed codon
   corrected_genes/       only when you asked for sites to be removed
     input_corrected.csv  what every later step reads
     summary.csv          name, input_sequence, new_sequence, codon_opt, notes
@@ -218,11 +243,20 @@ files, add `--format dna` to `ytk-add-overhangs`. **That is the only place you
 choose**: `ytk-clone` matches the fragments by itself, so a run cannot come out
 half one format and half the other. The plasmid is identical either way.
 
-**Your sequences are never changed unless you ask.** There is one exception, and
-you have to name it: `ytk-cds-qc --remove-sites` swaps a codon to remove an
-internal BsmBI or BsaI site. It writes `corrected_genes/`, leaves yours alone, prints
-every changed base, and refuses if the protein would change at all. On the two
-real genes in `tests/data/` it changes one base.
+**Your sequences are never changed unless you ask.** Two skills can change one,
+and you have to name either: `ytk-remove-cut-sites` swaps a codon to clear an
+internal BsmBI or BsaI site, and `ytk-codon-optimise` rewrites the whole gene for
+yeast. Both write a new folder, leave your file alone, and refuse if the protein
+would change at all. `ytk-remove-cut-sites` prints every changed base, and moves
+one base per site on the real genes in `tests/data/`. A rewrite moves hundreds, so
+that one prints the counts and writes every row to `changes.csv`.
+
+`ytk-cds-qc`, which is the step that finds the problems, has no way to change
+anything at all.
+
+The three gene files - `input.csv`, `input_optimised.csv` and
+`input_corrected.csv` - all have the same columns, so nothing downstream has to
+know which fixes you ran.
 
 ## When it stops and asks
 
@@ -264,6 +298,7 @@ python3 tests/test_ytk.py       # cloning, writing .dna and GenBank, annotation
 python3 tests/test_primers.py   # the primer designer, vs 20 real primer pairs
 python3 tests/test_parts.py     # the data tables and the entry vector
 python3 tests/test_inputs.py    # the four formats, and asking once
+python3 tests/test_codons.py    # the codon table, the rewrite, the measurements
 ```
 
 `tests/test_primers.py` measures against a real oligo sheet and gene list. Those

@@ -209,3 +209,20 @@ def _mark_known_parts(features, sequence):
 
 def _reverse_complement(sequence):
     return sequence.translate(str.maketrans("ACGTacgt", "TGCAtgca"))[::-1]
+
+
+def read_all(paths, feature=None):
+    """Every sequence from every input path, as (name, sequence, plasmid).
+
+    The one place the three sequence skills turn their --input into sequences,
+    so they cannot drift on which formats they take or on what they say when a
+    map file holds more than one candidate insert.
+    """
+    found = []
+    for path in paths:
+        try:
+            found += read(path, feature)
+        except AmbiguousCDS as ambiguous:
+            sys.exit(f"{ambiguous}\n\n{ambiguous.table()}\n\n"
+                     "Say which one with --feature NAME.")
+    return found

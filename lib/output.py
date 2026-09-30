@@ -14,7 +14,11 @@ handed sequences in the chat writes them to a CSV first and then runs the normal
 path, which keeps one code path rather than two.
 """
 import csv
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import metrics
 
 FOLDER_NAME = "ytk_output"
 INPUT_NAME = "input.csv"
@@ -49,18 +53,72 @@ def _beside(input_path):
     return input_path.parent / FOLDER_NAME
 
 
+# What ytk-remove-cut-sites and ytk-codon-optimise fill in. Written empty by
+# ytk-cds-qc so input.csv, input_corrected.csv and input_optimised.csv are one
+# shape, and a later step reads the same columns whichever of the three it got.
+FIXED_BY_LATER_STEPS = ["removed", "codon_opt_method"]
+
+HEADER = ["name", "plasmid", "sequence"] + metrics.COLUMNS + FIXED_BY_LATER_STEPS
+
+SUMMARY_HEADER = ["name", "input_sequence", "new_sequence", "codon_opt", "notes"]
+
+
+def _row(name, plasmid, sequence, removed="", codon_opt_method=""):
+    """One gene row, measured from the sequence in that row.
+
+    Measured here rather than passed in, so a file written after a fix carries
+    the numbers for the fixed sequence and never the old ones. An empty cell
+    means the number could not be taken, not that it was zero.
+    """
+    measured = metrics.measure(sequence)
+    return ([name, plasmid or "", sequence]
+            + ["" if measured[column] is None else measured[column]
+               for column in metrics.COLUMNS]
+            + [removed, codon_opt_method])
+
+
+def _write(path, header, rows):
+    with open(path, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(header)
+        writer.writerows(rows)
+    return path
+
+
 def write_input_csv(rows, folder):
-    """A copy of the input, in the one shape every later step reads.
+    """A copy of the input, measured, in the one shape every later step reads.
 
     `rows` is what sequences.read returns: (name, sequence, plasmid or None).
     Writing it here rather than copying the input file means a FASTA, a GenBank
     map or a .dna file reaches the rest of the run as a CSV with a plasmid
     column, so there is one input format downstream instead of four.
+
+    The measurements ride along on the sequence's own row. Measured once, they
+    tell whoever reads the file which fixing skill a gene needs, and a later
+    note is rebuilt from the columns rather than from re-measuring or from
+    reading a sentence back apart. Everything downstream picks columns out by
+    header name, so the extra ones cost it nothing.
     """
-    path = Path(folder) / INPUT_NAME
-    with open(path, "w", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(["name", "plasmid", "sequence"])
-        writer.writerows([name, plasmid or "", sequence]
-                         for name, sequence, plasmid in rows)
-    return path
+    return _write(Path(folder) / INPUT_NAME, HEADER,
+                  [_row(name, plasmid, sequence)
+                   for name, sequence, plasmid in rows])
+
+
+def write_genes_csv(path, rows):
+    """The handoff a fixing skill writes, in the same shape as input.csv.
+
+    `rows` is (name, plasmid, sequence, removed, codon_opt_method). Same shape as
+    input.csv on purpose: whichever file the next step is pointed at, it reads
+    the same columns, so nothing downstream has to know which fixes ran.
+    """
+    return _write(path, HEADER, [_row(*row) for row in rows])
+
+
+def write_summary_csv(path, rows):
+    """The file for reading: the old sequence beside the new one.
+
+    `rows` is (name, input_sequence, new_sequence, codon_opt, notes). Separate
+    from write_genes_csv because the two answer different questions - this one
+    is read by a person, that one is read by the next step.
+    """
+    return _write(path, SUMMARY_HEADER, rows)
