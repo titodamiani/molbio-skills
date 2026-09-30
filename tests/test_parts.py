@@ -161,7 +161,7 @@ class TestTheEntryVector(unittest.TestCase):
         self.assertEqual(enzymes.count(self.backbone, "BsaI"), 0)
 
     def test_cutting_it_leaves_the_1646_bp_piece(self):
-        kept = self.clone.cut_backbone(self.backbone)
+        kept = self.clone.cut_backbone(self.backbone, self.clone.BsmBI)
         self.assertEqual(len(kept) - OVERHANG, BACKBONE_LENGTH)
 
     def test_the_two_pieces_account_for_the_whole_vector(self):
@@ -181,8 +181,9 @@ class TestTheEntryVector(unittest.TestCase):
         for gene in ("ATGAAACGTTAA", "ATG" + "AAACGT" * 20 + "TGA"):
             with self.subTest(length=len(gene)):
                 fragment = flanks.flank(gene, adapters)
-                insert = self.clone.cut_insert(fragment)
-                plasmid = self.clone.assemble(fragment, self.backbone)
+                insert = self.clone.cut_insert(fragment, self.clone.BsmBI)
+                plasmid = self.clone.assemble(fragment, self.backbone,
+                                                    self.clone.BsmBI, "3")
                 self.assertEqual(len(plasmid),
                                  BACKBONE_LENGTH + len(insert) - OVERHANG)
 
@@ -199,7 +200,8 @@ class TestTheEntryVector(unittest.TestCase):
                         + adapters["left_adapter"] + gene
                         + adapters["right_adapter"] + flanks.RIGHT_SCAFFOLD
                         + flanks.reverse_complement(flanks.reverse_pad(pad)))
-            built.append(self.clone.assemble(fragment, self.backbone))
+            built.append(self.clone.assemble(fragment, self.backbone,
+                                                    self.clone.BsmBI, "3"))
         self.assertEqual(len(set(built)), 1, "pad length changed the plasmid")
 
 

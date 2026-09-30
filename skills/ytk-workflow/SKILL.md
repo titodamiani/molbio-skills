@@ -1,6 +1,6 @@
 ---
 name: ytk-workflow
-description: Run the whole MoClo Yeast Toolkit (YTK) job for one coding sequence or a batch of them - check the sequences, add the Golden Gate flanks, design the PCR primers, clone into pYTK001, label the maps and check them. Use this whenever someone wants the complete job rather than one step, has a file of genes and wants finished primers and labelled plasmid maps, or says something like "do the whole thing", "the full run", "all of it", "start to finish", "everything for these genes", or "just give me the primers and the maps".
+description: Run the whole MoClo Yeast Toolkit (YTK) job for one coding sequence or a batch of them - check the sequences, add the Golden Gate flanks, design the PCR primers, clone into an entry vector, label the maps and check them. Use this whenever someone wants the complete job rather than one step, has a file of genes and wants finished primers and labelled plasmid maps, or says something like "do the whole thing", "the full run", "all of it", "start to finish", "everything for these genes", or "just give me the primers and the maps".
 ---
 
 # The whole YTK job
@@ -26,9 +26,17 @@ Ask for, and never guess:
   changes the DNA. Never assume it.
 
 Everything else has a default that is right nearly always, so do not ask about
-it. The part type is always 3. Maps are GenBank unless they ask for SnapGene
+it. The part type defaults to 3 and every step prints the type it used. Ask about
+it only if the person mentions a fusion half, a promoter, a terminator, a tag or
+a non-YTK vector. **Never read the part type off the DNA** - 3 against 3a against
+3b is their design decision. Maps are GenBank unless they ask for SnapGene
 `.dna`, and that is chosen once, at step 2. Plasmid names come from a `plasmid`
-column, with `<gene>_pYTK001` as the fallback.
+column, with `<gene>_<backbone>` as the fallback.
+
+**A part type other than 3 skips step 1.** `ytk-cds-qc` asks one question, *is
+this a whole coding sequence*, so it would refuse a promoter or a fusion half
+with "not a Type 3 CDS". For any other type, start at step 2, and take the
+internal-cut-site information from the `notes` column that step 2 writes.
 
 **If they do not say where to put the output**, do not ask either. Leave
 `--outdir` off and every step writes to a `ytk_output/` folder beside the input
@@ -52,6 +60,7 @@ Use the ytk-workflow skill to run the full YTK workflow on these genes.
 
 Input:   /path/to/genes.csv
 Output:  /path/to/output/
+Part type (default 3):
 Remove internal BsmBI/BsaI sites in the CDS: [True/False]
 ```
 
@@ -70,16 +79,23 @@ OUTPUT/
     summary.csv          the synthesis order
     <gene>.gb            the flanked sequence, one per gene
   plasmids/
-    pYTK001/
+    <backbone>/
       summary.csv
       <plasmid>.gb
 ```
 
 ## Run it
 
-Set `OUT` to their output folder first. Do not copy the input in by hand: step 1
-writes `input.csv` itself, which turns a FASTA or a `.dna` file into the CSV
-every later step reads.
+Set these first. Do not copy the input in by hand: step 1 writes `input.csv`
+itself, which turns a FASTA or a `.dna` file into the CSV every later step reads.
+
+```
+OUT=/path/to/output
+TYPE=3
+BACKBONE=pYTK001
+ENZYME=BsmBI
+MAPS="$OUT/plasmids/$BACKBONE"
+```
 
 **Step 1 — check the sequences.**
 
@@ -111,7 +127,7 @@ Below, `GENES` means `$OUT/input.csv` normally and
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-add-overhangs/scripts/add_overhangs.py" \
-    --input "$GENES" --outdir "$OUT"
+    --input "$GENES" --type "$TYPE" --outdir "$OUT"
 ```
 
 Writes `$OUT/fragments/`: one `<gene>.gb` per gene, plus `summary.csv`. That
@@ -126,7 +142,7 @@ files, and step 4 follows by itself.
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-design-primers/scripts/design_primers.py" \
-    --input "$GENES" --outdir "$OUT"
+    --input "$GENES" --type "$TYPE" --outdir "$OUT"
 ```
 
 **Step 4 — clone.** Reads the fragment summary from step 2, and the plasmid
@@ -134,12 +150,16 @@ names from `$GENES`.
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-clone/scripts/clone.py" \
-    --input "$OUT/fragments/summary.csv" --genes "$GENES" --outdir "$OUT"
+    --input "$OUT/fragments/summary.csv" --genes "$GENES" --outdir "$OUT" \
+    --type "$TYPE" --backbone "$BACKBONE" --enzyme "$ENZYME"
 ```
 
-Writes `$OUT/plasmids/pYTK001/`, named after the backbone actually used. Plasmid
-names come from the `plasmid` column of `$GENES`, so a map is called `pTP412.gb`
-and not after the gene.
+Writes `$MAPS`, named after the backbone actually used. Plasmid names come from
+the `plasmid` column of `$GENES`, so a map is called `pTP412.gb` and not after
+the gene.
+
+The fragment file from step 2 carries the part type, so a `--type` that disagrees
+with it stops the run before anything is written.
 
 Do not pass `--format` here. It matches the fragments from step 2 by itself.
 
@@ -148,15 +168,19 @@ gets labelled and not the flanked version.
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-annotate-map/scripts/annotate_map.py" \
-    "$OUT"/plasmids/pYTK001/*.gb --genes "$GENES"
+    $(find "$MAPS" -type f ! -name summary.csv) --genes "$GENES"
 ```
 
 **Step 6 — check the maps.**
 
 ```
 python3 "$CLAUDE_PLUGIN_ROOT/skills/ytk-verify-map/scripts/verify_map.py" \
-    "$OUT"/plasmids/pYTK001/*.gb --genes "$GENES"
+    $(find "$MAPS" -type f ! -name summary.csv) --genes "$GENES"
 ```
+
+**Do not glob `*.gb` in steps 5 and 6.** Step 4 follows step 2's format, so the
+maps may be `.dna`. `summary.csv` is the only other file in that folder, so leave
+it out rather than guessing the suffix.
 
 With no reference file this checks the map on its own: reading frame, ATG, stop
 codon, and that the start of the map does not split the gene. If they have
@@ -181,6 +205,7 @@ Steps 1, 3 and 4 can stop. When one does:
   clean and nothing was done to it.
 - any primer pair that would not balance within 2 C, which needs finishing by
   hand
+- which part type, backbone and enzyme were used
 - anything skipped, and why
 
 ## The two outputs that differ on purpose

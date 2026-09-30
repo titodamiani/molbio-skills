@@ -83,25 +83,51 @@ class TestPickingTheCodingSequence(unittest.TestCase):
 
 class TestTheCodingSequenceCheck(unittest.TestCase):
     def test_a_good_cds_has_no_problems(self):
-        self.assertEqual(cds.problems("ATGAAACGTTAA"), [])
+        self.assertEqual(cds.problems("ATGAAACGTTAA", "full"), [])
 
     def test_every_fault_is_reported_not_just_the_first(self):
-        problems = cds.problems("CCCAAACGTAAAA")
+        problems = cds.problems("CCCAAACGTAAAA", "full")
         self.assertEqual(len(problems), 3)
         self.assertTrue(any("ATG" in p for p in problems))
         self.assertTrue(any("stop codon" in p for p in problems))
         self.assertTrue(any("codons" in p for p in problems))
 
     def test_odd_letters_are_named(self):
-        self.assertIn("N", cds.problems("ATGNNNTAA")[0])
+        self.assertIn("N", cds.problems("ATGNNNTAA", "full")[0])
 
     def test_a_stop_in_the_middle_is_a_warning_not_a_fault(self):
         sequence = "ATGTAACGTTAA"
-        self.assertEqual(cds.problems(sequence), [])
-        self.assertTrue(any("before the end" in w for w in cds.warnings(sequence)))
+        self.assertEqual(cds.problems(sequence, "full"), [])
+        self.assertTrue(any("before the end" in w for w in cds.warnings(sequence, "full")))
+
+    def test_a_non_coding_type_invents_nothing(self):
+        # No ATG, no stop codon, and not a whole number of codons. A promoter
+        # has no testable shape, so none of that is a fault for type 1.
+        self.assertEqual([], cds.problems("CCGGATTACAGG", ""))
+
+    def test_a_non_coding_type_is_still_read_for_empty_and_odd_letters(self):
+        self.assertEqual(["is empty"], cds.problems("", ""))
+        self.assertIn("N", cds.problems("CCGGNNTACAGG", "")[0])
+
+    def test_the_first_half_of_a_fusion_needs_atg_and_no_stop(self):
+        self.assertEqual([], cds.problems("ATG" + "AAACGT" * 3, "start"))
+        faults = cds.problems("ATG" + "AAACGT" * 3 + "TAA", "start")
+        self.assertEqual(1, len(faults))
+        self.assertIn("must not end with a stop codon", faults[0])
+
+    def test_the_second_half_of_a_fusion_starts_mid_protein(self):
+        self.assertEqual([], cds.problems("AAACGTTAA", "end"))
+
+    def test_the_missing_stop_codon_has_one_fixed_wording(self):
+        # add_overhangs picks this fault out of the list by name when
+        # --no-stop-codon says it is on purpose.
+        self.assertEqual([cds.NO_STOP_CODON], cds.problems("ATGAAACGT", "full"))
+
+    def test_a_stop_in_the_middle_is_not_a_warning_for_a_non_coding_type(self):
+        self.assertEqual([], cds.warnings("ATGTAACGTTAA", ""))
 
     def test_a_cut_site_is_a_warning(self):
-        warnings = cds.warnings("ATG" + "CGTCTC" + "AAATAA")
+        warnings = cds.warnings("ATG" + "CGTCTC" + "AAATAA", "full")
         self.assertTrue(any("BsmBI" in w for w in warnings))
 
 

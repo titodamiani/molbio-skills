@@ -21,7 +21,7 @@ python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS --genes GENES
 ```
 
 `FRAGMENTS` is `fragments/summary.csv` from **ytk-add-overhangs**. That clones
-into pYTK001 with BsmBI, which is the YTK entry reaction.
+Type 3 parts into pYTK001 with BsmBI, which is the YTK entry reaction.
 
 `GENES` is the input file: `input.csv`, or
 `corrected_genes/input_corrected.csv` when sites were removed. The plasmid names
@@ -32,17 +32,36 @@ Without `--outdir` the maps go in a `ytk_output/` folder beside the input, and
 the script prints where. An input that is already inside one goes back into it,
 so chaining the steps by hand does not bury a folder in the last one.
 
-Any other vector, any other Type IIS enzyme:
+Another part type, another vector, another Type IIS enzyme:
 
 ```bash
 python3 "$CLAUDE_SKILL_DIR/scripts/clone.py" --input FRAGMENTS \
-    --backbone my_vector.gb --enzyme BsaI
+    --type 5 --backbone pYTK047 --enzyme BsaI
 ```
 
-`--backbone` takes `.dna`, `.gb`, `.gbk` or FASTA. `--enzyme` takes any name
-Biopython knows. Away from the default pair, the Type 3 junction check is
-skipped, because `TATG`/`ATCC` only means something for the entry reaction. The
-overhangs are still checked: pydna refuses to join ends that do not match.
+`--type` says which part type the fragments are. It defaults to 3 and is printed
+on every run. It is a declaration, never read off the DNA: 3 against 3a against
+3b is a design decision. Types 1 to 8b are known. Anything else, including
+`custom`, `234` and `cassette`, stops the run, because those have no published
+overhang pair to check against.
+
+`--backbone` takes a published `pYTKnnn` name, or a path to `.dna`, `.gb`, `.gbk`
+or FASTA. A path that exists wins over a name. `--enzyme` takes any name
+Biopython knows.
+
+**No flag switches the checks off.** The overhang check runs on every run,
+whatever `--backbone` and `--enzyme` say. That check asks one question: *is this
+the part type you declared?* Whether the part fits the backbone is a different
+question, answered when the two pieces are joined, with its own message naming
+both overhang pairs.
+
+This matters because the outer BsmBI cut leaves the same ends on every part
+type, by design. So a Type 5 fragment will go into pYTK001 and look perfectly
+normal. Only the part-type check catches it.
+
+One fragment plus one backbone. Multi-fragment assembly — a YTK stage 2 cassette
+or a stage 3 multi-gene plasmid — is out of scope. That is also why a vector like
+pYTK047 cannot take one part: it accepts a whole 2-3-4 cassette.
 
 `$CLAUDE_SKILL_DIR` is this skill's own folder, so the command works from any
 directory. The script finds the shared code and the parts table by itself.
@@ -63,12 +82,18 @@ plasmids/
 from the fragment file, and `codon_opt` and `notes` from `--genes`. All are
 optional: a bare FASTA of fragments still clones, it just leaves them blank.
 
+A `part_type` column that disagrees with `--type` stops the run before anything
+is built. The fragment file was written by the step that chose the type, so a
+disagreement means one of the two is wrong.
+
 **The format is not chosen here.** It is read off the fragment maps beside the
 input, so the maps come out in whatever format the fragments were written in.
 `--format` overrides that if you really need to. The plasmid is identical either
 way; only the file format changes.
 
-So the next step can just take `plasmids/pYTK001/*.gb` from the output folder.
+So the next step can just take everything but `summary.csv` from
+`plasmids/<backbone>/`. Do not glob `*.gb`: the format follows the fragments, so
+the maps may be `.dna`.
 
 The linear post-digest pieces are not written. Nothing downstream reads them,
 and the fragment maps from `ytk-add-overhangs` are the ones worth keeping.
@@ -144,28 +169,35 @@ decides.
 
 ## What the script does
 
-1. Cuts the fragment with BsmBI and keeps the piece between the two designed
+1. Cuts the fragment with the enzyme and keeps the piece between the two designed
    cuts.
-2. Checks that piece is a Type 3 part. See below.
-3. Cuts the pYTK001 entry vector with BsmBI and keeps the larger piece.
+2. Checks that piece is a part of the type declared. See below.
+3. Cuts the backbone with the same enzyme and keeps the larger piece.
 4. Joins the two and closes the loop.
 5. Turns the loop so it starts at base 1 of the backbone.
 
 ## What it refuses
 
-**No pair of BsmBI sites.** The fragment looks like a bare gene. The script
+**No pair of cut sites.** The fragment looks like a bare gene. The script
 says so and stops. It does not add the flanks for you, even if the person
 says to go ahead — that would assume a fragment design they may never have
 ordered. Send them to **ytk-add-overhangs** instead.
 
-**The wrong part type.** The script reads the part's own overhangs and
-compares them with the Type 3 pair, `TATG` and `ATCC`, taken from
-`data/ytk_parts.tsv`. Anything else does not belong in this entry vector, so
-the run stops and reports the overhangs it found.
+**The wrong part type.** The script reads the part's own overhangs and compares
+them with the published pair for `--type`, taken from
+`data/ytk_part_types.tsv`. A mismatch stops the run and reports both pairs.
 
 Those overhangs come from the inner BsaI sites, not the outer BsmBI ones. The
-BsmBI cut gives the same ends on every part type, because those ends are what
+outer cut gives the same ends on every part type, because those ends are what
 fits the entry vector.
+
+**A part that does not fit the backbone.** A real Type 3 part passes the type
+check but still may not fit the vector asked for. The script says which pair the
+part offers and which pair the backbone accepts, so you can see which slot that
+vector wants.
+
+**An unknown part type, or one with no published overhangs.** Types 1 to 8b are
+known. `custom` has `NNNN` adapters, so it has to be finished by hand.
 
 ## Fragments with an internal cut site
 
@@ -176,8 +208,10 @@ so only the two designed outer cuts count and the gene comes through unchanged.
 The gene is never edited to remove such a site. Cut sites are left exactly
 where they are.
 
-The output table has an `internal site` column, and the script names the
-flagged genes at the end of the run. A `yes` is normal and needs no action.
+The output table has an `internal BsmBI/BsaI` column, and the script names the
+flagged genes at the end of the run. It always counts those two enzymes, whatever
+`--enzyme` says, because those two are the ones the flanks carry. A `yes` is
+normal and needs no action.
 Pass it on to the person, because at the bench that gene cannot be re-cut with
 the same enzyme later.
 

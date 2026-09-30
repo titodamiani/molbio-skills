@@ -3,16 +3,38 @@
 Things that are true, are not obvious, and would cost you a day to rediscover.
 None of them is a bug in this repo.
 
-## Scope is Type 3 only, on purpose
+## Type 3 is the default, not the limit
 
-The plugin builds one part type: a whole coding sequence that starts with `ATG`
-and ends with a stop codon. The part type is never guessed from a sequence,
-because Type 3 versus 3a versus 3b is a design decision, not a property of the
-DNA.
+`ytk-add-overhangs`, `ytk-design-primers` and `ytk-clone` all take `--type`, and
+types 1 to 8b work. Type 3 is the default: a whole coding sequence that starts
+with `ATG` and ends with a stop codon.
+
+The part type is never guessed from a sequence, because Type 3 versus 3a versus
+3b is a design decision, not a property of the DNA. Every script prints the type
+it used, so a wrong default cannot pass unnoticed, and `ytk-clone` checks the
+fragment's own overhangs against the declared type on every run.
 
 `data/ytk_overhangs.tsv` holds the adapters for every type, and
-`data/ytk_part_types.tsv` holds the published overhangs. Nothing reads the other
-rows. They are there so the numbers are on record.
+`data/ytk_part_types.tsv` holds the published overhangs. `lib/flanks.py` reads
+both. Junctions come from `ytk_part_types.tsv` and never from the adapters: a
+part type is defined by those four bases on each side and by nothing else, so
+deriving them from a sequence would only ever agree with itself.
+
+`data/ytk_parts.tsv` is not a junction source. It mixes in unpublished types
+(`234`, `234r`, `678`, `cassette`), and the first row matching type 3 is a gene,
+not a junction definition. That mistake once made the check compare a part
+against `mTurquoise2`.
+
+**`ytk-cds-qc` stays Type 3 only, and that is deliberate.** Its whole identity is
+the question *is this a whole coding sequence*. `lib/silent.py` in particular
+cannot be type-generic: finding a synonymous codon needs a reading frame. For any
+other part type, skip that step and take the internal-cut-site information from
+the `notes` column that `ytk-add-overhangs` writes.
+
+**`custom` has `NNNN` adapters.** `flanks.junctions("custom")` stops the run, and
+`lib/snapgene.py` refuses any sequence with a letter outside ACGT, so a custom
+fragment could never be read back anyway. The row stays because it records the
+paper's advice. Finish a custom part by hand.
 
 ## Getting a C-terminal tag later
 
@@ -173,6 +195,20 @@ so generated maps line up with the ones made by hand in SnapGene. A backbone rea
 straight from the kit starts at base 1 of the BsmBI overhang instead, which is
 **inside the piece that drops out** and therefore gone from the finished plasmid.
 When that happens the map starts at the first base of the piece that was kept.
+
+**Do not "simplify" pYTK001 to just another file lookup.** `clone.load_backbone`
+keeps an explicit first branch for it, and the measurements are why. The stored
+copy and `reference/ytk_plasmids/pYTK001.gb` are the same 2676 bp circle, turned
+to different first bases: base 1 of the reference file sits at position **177** of
+the stored copy, so the stored copy is the reference turned by **2499** bases.
+Base 1 of the reference file is the first base of the 1034 bp BsmBI dropout, so
+the first 40 bases of that file are simply **not in** the finished plasmid
+(measured: the kept piece is 1650 bp and does not hold them). The 40-base anchor
+misses, the fallback fires, and every
+entry-reaction map comes out rotated. `tests/test_ytk.py::TestPTP416` compares
+byte for byte against a hand-drawn SnapGene map and would fail. With the branch,
+`--backbone pYTK001` and no flag give byte-identical files, and a test pins that.
+The other 95 published plasmids need no special handling.
 
 ## pydna counts sticky ends twice
 

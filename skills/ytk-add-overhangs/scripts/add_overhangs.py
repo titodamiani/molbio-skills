@@ -7,8 +7,8 @@ overhang pair that fixes where the part sits in a YTK assembly.
     python3 add_overhangs.py --input parts.csv
     python3 add_overhangs.py --input parts.csv --type 3a --outdir out/
 
-The part type defaults to 3, which is the only type this plugin builds, and is
-printed on every run. It is still never read off the sequence: 3 against 3a
+The part type defaults to 3, a whole coding sequence, and is printed on every
+run. Types 1 to 8b all work. It is still never read off the sequence: 3 against 3a
 against 3b is a design decision, not a property of the DNA.
 
 Everything lands in a fragments/ folder under the output folder: one GenBank map
@@ -22,7 +22,6 @@ the script says so and stops.
 """
 import argparse
 import csv
-import re
 import sys
 from pathlib import Path
 
@@ -36,19 +35,11 @@ import output     # noqa: E402
 import sequences  # noqa: E402
 import snapgene as sg
 
-OVERHANG_TABLE = ROOT / "data" / "ytk_overhangs.tsv"
-
-# The only part type this plugin builds: a whole coding sequence. It is a
-# default and not a guess - it is printed on every run, and --type overrides it.
+# A whole coding sequence. It is a default and not a guess - it is printed on
+# every run, and --type overrides it.
 PART_TYPE = "3"
 
 INSERT_COLOR = "#66ccff"
-
-
-def read_overhangs():
-    """The per-type adapter pair, from the shared table."""
-    with open(OVERHANG_TABLE, newline="") as fh:
-        return {row["part_type"]: row for row in csv.DictReader(fh, delimiter="\t")}
 
 
 def check(name, sequence, adapters, allow_no_stop):
@@ -56,32 +47,26 @@ def check(name, sequence, adapters, allow_no_stop):
 
     A hard stop is for a design that would be wrong DNA: a junction that does
     not form, a reading frame that does not close, a stop codon in the middle
-    of a protein fusion.
+    of a protein fusion. The checks themselves live in lib/cds.py and are the
+    same ones ytk-design-primers uses.
+
+    Every fault is reported at once, so one run tells you everything to fix.
 
     A cut site inside the sequence is not checked here. It is measured once,
     for the notes column, and printed from there, so the screen and the order
     file cannot disagree about it.
     """
-    if not re.fullmatch(r"[ACGT]+", sequence):
-        sys.exit(f"{name}: the sequence holds something other than A, C, G and T")
-
-    coding = adapters["coding"]
-    part_type = adapters["part_type"]
-    ends_in_stop = sequence[-3:] in cds.STOP_CODONS
-
-    if coding and len(sequence) % 3:
-        sys.exit(f"{name}: length {len(sequence)} is not a whole number of codons")
-    # A left adapter of a single T relies on the gene's own ATG to complete the
-    # TATG overhang, so without that ATG the junction is simply wrong.
-    if coding in ("full", "start") and not sequence.startswith("ATG"):
-        sys.exit(f"{name}: type {part_type} needs a sequence starting with ATG")
-    if coding == "start" and ends_in_stop:
-        sys.exit(f"{name}: type {part_type} is the first half of a protein fusion, "
-                 "so it must not end with a stop codon")
-    if coding in ("full", "end") and not ends_in_stop and not allow_no_stop:
-        sys.exit(f"{name}: type {part_type} has no stop codon at the end, and the "
-                 f"flank does not add one. Pass --no-stop-codon {name} if that is "
-                 "intended")
+    faults = cds.problems(sequence, adapters["coding"])
+    if allow_no_stop:
+        faults = [fault for fault in faults if fault != cds.NO_STOP_CODON]
+    if not faults:
+        return
+    message = "\n".join(f"{name}: type {adapters['part_type']} {fault}"
+                        for fault in faults)
+    if cds.NO_STOP_CODON in faults:
+        message += (f"\nThe flank does not add one. Pass --no-stop-codon {name} "
+                    f"if that is intended.")
+    sys.exit(message)
 
 
 def write_labelled_map(path, name, sequence, ordered, adapters):
@@ -112,8 +97,7 @@ def main():
                         help=".fa, .fasta, .csv, .gb, .gbk or .dna")
     parser.add_argument("--feature", help="which feature holds the CDS, for map files")
     parser.add_argument("--type", default=PART_TYPE,
-                       help=f"YTK part type (default {PART_TYPE}, the only type "
-                            f"this plugin builds)")
+                       help=f"YTK part type (default {PART_TYPE})")
     parser.add_argument("--format", default="genbank", choices=["genbank", "dna"],
                        help="format of the per-fragment maps (default genbank, "
                             "which SnapGene also opens)")
@@ -124,10 +108,7 @@ def main():
                        help="names of sequences that end without a stop codon on purpose")
     args = parser.parse_args()
 
-    table = read_overhangs()
-    if args.type not in table:
-        sys.exit(f"unknown part type {args.type}. Known types: {', '.join(table)}")
-    adapters = table[args.type]
+    adapters = flanks.adapters(args.type)
 
     try:
         parts = [(name, seq.upper(), plasmid) for name, seq, plasmid

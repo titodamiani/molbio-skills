@@ -1,6 +1,6 @@
 ---
 name: ytk-design-primers
-description: Design PCR primers that add the MoClo Yeast Toolkit (YTK) Golden Gate flanks to a coding sequence, so the product amplified from cDNA is already YTK-compatible and drops straight into the pYTK001 entry vector. Works out the binding region, Tm, GC and the annealing temperature, and writes one CSV to order from. Use this whenever someone wants primers, oligos, a primer pair, something to order from a supplier, or asks how to amplify a gene for YTK cloning, Golden Gate or the entry vector - including when they only say "design primers for these genes", "what oligos do I order", or "make me primers for this batch". For the whole job at once, use ytk-workflow.
+description: Design PCR primers that add the MoClo Yeast Toolkit (YTK) Golden Gate flanks to a coding sequence, so the product amplified from cDNA is already YTK-compatible and drops straight into a YTK entry vector. Works out the binding region, Tm, GC and the annealing temperature, and writes one CSV to order from. Use this whenever someone wants primers, oligos, a primer pair, something to order from a supplier, or asks how to amplify a gene for YTK cloning, Golden Gate or the entry vector - including when they only say "design primers for these genes", "what oligos do I order", or "make me primers for this batch". For the whole job at once, use ytk-workflow.
 ---
 
 # Design YTK primers
@@ -14,8 +14,9 @@ YTK-compatible. Amplification is from cDNA.
 ## What you need from the person
 
 - **The sequences.** A file, or one sequence on the command line.
-- Nothing else. This skill only makes Type 3 parts, so there is no part type to
-  choose.
+- **The part type**, only if it is not 3. Type 3 is a whole coding sequence and
+  is the default. Ask only if the person mentions a fusion half, a promoter, a
+  terminator or a tag. Never read the type off the DNA.
 
 Never guess a sequence, and never change one.
 
@@ -33,6 +34,15 @@ printf 'name,sequence\nmy_gene,ATGAAA...TAA\n' > genes.csv
 ```
 
 Input can be `.fa`, `.fasta`, `.csv`, `.gb`, `.gbk` or `.dna`.
+
+Another part type:
+
+```
+python3 "$CLAUDE_SKILL_DIR/scripts/design_primers.py" --input genes.csv --type 3a
+```
+
+`--type` defaults to 3 and is printed on every run. Types 1 to 8b and `custom`
+are known.
 
 **Map files:** a plasmid map holds the insert plus the vector's own machinery,
 and a resistance marker is usually labelled `CDS` while the insert is labelled
@@ -101,10 +111,21 @@ pad and a 4-base pad give the same part plasmid.
 
 Unless the person already said what to do, stop and ask when:
 
-- the sequence is not a valid Type 3 CDS - no ATG, no stop codon, or a length
-  that is not a whole number of codons
+- the sequence does not fit the part type asked for. What is checked depends on
+  the type:
+  - **type 3** (a whole coding sequence): starts with ATG, ends with a stop
+    codon, a whole number of codons
+  - **type 3a** (the first half of a fusion): starts with ATG, a whole number of
+    codons, and must *not* end with a stop codon
+  - **type 3b** (the second half): a whole number of codons, ends with a stop
+    codon; nothing is asked about ATG, because a real protein may have Met there
+  - **every other type**, which is not a coding sequence: only that the sequence
+    is not empty and holds nothing but A, C, G and T. A promoter has no testable
+    shape and no reading frame, so nothing more is invented for it
 - the sequence holds a BsmBI or BsaI site
-- a primer would have to be longer than 50 bp
+- a primer would have to be longer than 50 bp. Types 4, 4a, 8 and 8a have longer
+  adapters, 8 or 9 extra bases, so an over-length warning there is expected
+  rather than a fault
 - no binding region at all can be found
 
 In a batch, do not stop at the first problem. The script collects every problem,
@@ -123,6 +144,6 @@ Do not tune it per primer. `tests/test_primers.py` fails if it drifts.
 
 ## After this
 
-The PCR product goes into pYTK001 with `ytk-clone`. If the PCR fails in the lab
-after a few tries, order the flanked sequence instead with
-`ytk-add-overhangs`.
+The PCR product goes into an entry vector with `ytk-clone`, pYTK001 by default.
+If the PCR fails in the lab after a few tries, order the flanked sequence instead
+with `ytk-add-overhangs`.

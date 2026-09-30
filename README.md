@@ -25,10 +25,20 @@ python3 -m pip install -r requirements.txt
 The skills do not install anything themselves. If something is missing they print
 that exact line and stop, so the pinned versions are the versions you get.
 
-## Scope: part Type 3 only
+## Scope: Type 3 by default, one fragment at a time
 
-One part type is supported: **Type 3**, a whole coding sequence that starts with
-`ATG` and ends with a stop codon.
+**Type 3** is the default part type everywhere: a whole coding sequence that
+starts with `ATG` and ends with a stop codon. It is a default, not a limit.
+`ytk-add-overhangs`, `ytk-design-primers` and `ytk-clone` all take `--type`, and
+types 1 to 8b work.
+
+Two real limits:
+
+- **`ytk-cds-qc` is Type 3 only, by design.** It asks one question: is this a
+  whole coding sequence? For any other type, skip it. The internal-cut-site
+  information then comes from the `notes` column written by `ytk-add-overhangs`.
+- **One fragment plus one backbone.** Multi-fragment assembly - a YTK stage 2
+  cassette or a stage 3 multi-gene plasmid - is out of scope.
 
 **The part type is never guessed from a sequence.** Type 3 versus 3a versus 3b is
 your design decision, not a property of the DNA. Nothing here will pick for you,
@@ -67,9 +77,9 @@ Output:  /path/to/output/
 Remove internal BsmBI/BsaI sites in the CDS: [True/False]
 ```
 
-That is the whole prompt. Part type is always 3 and every format has a default,
+That is the whole prompt. Part type defaults to 3 and every format has a default,
 so neither needs saying. Plasmid names come from the `plasmid` column of your
-input; a row without one falls back to `<gene>_pYTK001`.
+input; a row without one falls back to `<gene>_<backbone>`.
 
 Ask for "the ytk-workflow prompt" any time and it will print this back to you.
 
@@ -123,7 +133,7 @@ map. This is what SnapGene's cloning simulation does.
 4. PCR from cDNA.
 5. **If the PCR keeps failing**, order the flanked sequence from a synthesis
    company instead. That is what `ytk-add-overhangs` gives you.
-6. Golden Gate into pYTK001 with BsmBI, and get a map.
+6. Golden Gate into an entry vector, pYTK001 with BsmBI by default, and get a map.
 
 ## The pad, and why two outputs differ
 
@@ -175,7 +185,7 @@ out/
     summary.csv          the synthesis order: name, sequence, part_type, codon_opt, notes
     <gene>.gb            the flanked sequence, one map per gene
   plasmids/
-    pYTK001/
+    <backbone>/
       summary.csv        plasmid, sequence, part_type, codon_opt, notes
       <plasmid>.gb       one labelled circular map per plasmid
 ```

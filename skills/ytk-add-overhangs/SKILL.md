@@ -20,8 +20,9 @@ Ask for these only if they matter to the person:
 - **Where to save** the output. Without `--outdir` it goes in a `ytk_output/`
   folder beside the input file, and the script prints where.
 - **A different part type.** `--type` defaults to **3**, a whole coding
-  sequence, which is the only type this plugin builds. The default is printed
-  on every run.
+  sequence. The default is printed on every run. Types 1 to 8b all work.
+  `custom` has `NNNN` adapters, so a custom part has to be finished by hand and
+  cannot be read back by the later steps.
 - **A different format.** Maps are GenBank, which SnapGene also opens.
   `--format dna` writes SnapGene `.dna` instead, here and for every later step:
   this is the one place the format is chosen. The synthesis order is always
@@ -138,14 +139,26 @@ exemption.
 
 Report a problem. Do not fix it.
 
-The script stops, and writes nothing, when:
+The checks live in `lib/cds.py` and are the same ones **ytk-design-primers**
+runs, so the two skills cannot disagree about a sequence.
 
-- the sequence holds anything other than A, C, G and T
-- a coding sequence is not a whole number of codons
-- a type needing `ATG` at the start does not have one
-- the first half of a protein fusion (type 3a) ends with a stop codon
-- a coding sequence has no stop codon at the end, and was not named with
-  `--no-stop-codon`
+What is checked depends on the part type:
+
+- **every type**: the sequence is not empty, and holds nothing but A, C, G and T
+- **type 3**, a whole coding sequence: starts with `ATG`, ends with a stop codon,
+  a whole number of codons
+- **type 3a**, the first half of a fusion: starts with `ATG`, a whole number of
+  codons, and must *not* end with a stop codon
+- **type 3b**, the second half: a whole number of codons, ends with a stop codon.
+  Nothing is asked about `ATG`, because a real protein may have Met there
+- **every other type**, which is not a coding sequence: nothing beyond the two
+  checks in the first line. A promoter has no testable shape and no reading
+  frame, so nothing more is invented for it
+
+A sequence named with `--no-stop-codon` is allowed to end without one.
+
+The script reports every fault at once, not just the first, so one run tells you
+everything to fix. It writes nothing when there is a fault.
 
 It notes, and carries on, when:
 

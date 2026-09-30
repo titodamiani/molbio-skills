@@ -13,7 +13,18 @@ outside both enzymes, so they are cut off and thrown away.
 The two BsmBI sites have different spacers, `atc` on the left and `a` on the
 right. That asymmetry is what makes the two overhangs come out different, so
 the fragment can only go into the vector one way round. It is not a typo.
+
+BsmBI outside and BsaI inside is how this plugin designs a fragment, and it is
+the same for every part type. So ytk-clone's --enzyme picks which of those two
+cuts is being simulated. It does not change what the flanks are.
 """
+import csv
+import sys
+from pathlib import Path
+
+DATA = Path(__file__).resolve().parents[1] / "data"
+OVERHANG_TABLE = DATA / "ytk_overhangs.tsv"
+PART_TYPE_TABLE = DATA / "ytk_part_types.tsv"
 
 COMPLEMENT = str.maketrans("ACGTacgt", "TGCAtgca")
 
@@ -38,6 +49,44 @@ FULL_PAD = len(LEFT_HANDLE)
 
 def reverse_complement(sequence):
     return sequence.translate(COMPLEMENT)[::-1]
+
+
+def _table(path):
+    """Rows of a data table, keyed by part type.
+
+    Comment rows are skipped. A row that stops early, because its last columns
+    are empty, reads those columns as "" and not as None.
+    """
+    with open(path, newline="") as fh:
+        rows = {}
+        for row in csv.DictReader(fh, delimiter="\t"):
+            if row["part_type"].startswith("#"):
+                continue
+            rows[row["part_type"]] = {key: value or "" for key, value in row.items()}
+        return rows
+
+
+def adapters(part_type):
+    """The adapter pair, and what the type holds, for one part type."""
+    table = _table(OVERHANG_TABLE)
+    if part_type not in table:
+        sys.exit(f"unknown part type {part_type}. Known types: {', '.join(table)}")
+    return table[part_type]
+
+
+def junctions(part_type):
+    """The overhang pair a part of this type must have.
+
+    These come from the published part-type table, not from the adapters. The
+    part type is defined by these four bases on each side and by nothing else,
+    so reading them off a sequence would only ever agree with itself.
+    """
+    table = _table(PART_TYPE_TABLE)
+    if part_type not in table:
+        sys.exit(f"part type {part_type} has no published overhang pair. "
+                 f"Known types: {', '.join(table)}")
+    row = table[part_type]
+    return row["upstream"].upper(), row["downstream"].upper()
 
 
 def flank(sequence, adapters):

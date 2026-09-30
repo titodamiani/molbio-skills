@@ -103,7 +103,9 @@ def remove_sites(sequence):
     say so rather than pretend the job is done.
     """
     sequence = sequence.upper()
-    faults = cds.problems(sequence)
+    # "full": swapping a codon needs a reading frame, so this only ever works
+    # on a whole coding sequence.
+    faults = cds.problems(sequence, "full")
     if faults:
         raise ValueError("not a Type 3 coding sequence: " + "; ".join(faults))
 

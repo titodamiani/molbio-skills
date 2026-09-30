@@ -10,12 +10,19 @@ summary.csv beside them.
 
     python3 clone.py --input fragments/summary.csv --genes input.csv
     python3 clone.py --input fragments/summary.csv --outdir out/ \
-        --backbone my_vector.gb --enzyme BsaI
+        --type 5 --backbone pYTK047 --enzyme BsaI
 
 Without --outdir the maps go in a ytk_output/ folder beside the input.
 
 The backbone defaults to pYTK001 and the enzyme to BsmBI, which is the YTK entry
-reaction. Any Type IIS enzyme Biopython knows works.
+reaction. --backbone takes a published pYTKnnn name or a file of your own. Any
+Type IIS enzyme Biopython knows works.
+
+--type says which part type the fragments are. It is a declaration, never read
+off the DNA, and it defaults to 3. Every run checks the fragment's overhangs
+against the published pair for that type, so a wrong --type stops the run. That
+check asks whether the fragment is the type you declared. Whether the part fits
+the backbone is a separate question, answered when the two pieces are joined.
 
 The map format is not asked for here. It is read off the fragment maps beside
 the input, so the maps come out in whatever format the fragments were written
@@ -39,6 +46,7 @@ import snapgene as sg
 
 import deps                               # noqa: E402
 import enzymes                           # noqa: E402
+import flanks                             # noqa: E402
 import notes                              # noqa: E402
 import output                             # noqa: E402
 import sequences                          # noqa: E402
@@ -52,12 +60,18 @@ from pydna.dseqrecord import Dseqrecord    # noqa: E402
 
 PARTS_TABLE = ROOT / "data" / "ytk_parts.tsv"
 
-# The entry vector every Type 3 part goes into. Its name is also used to name
-# plasmid files when the fragment file does not give a name.
+# The 96 published YTK plasmid maps, so --backbone takes a bare pYTKnnn.
+PLASMIDS = ROOT / "reference" / "ytk_plasmids"
+
+# The entry vector, used when --backbone says nothing.
 BACKBONE_NAME = "pYTK001"
 
-# The only part type that belongs in this entry vector.
-PART_TYPE = "3"
+# The part type used when --type says nothing.
+DEFAULT_TYPE = "3"
+
+# The flanks always put BsaI inside BsmBI, whatever part type is being built,
+# so the inner cut is a fact about the fragment and not a flag. See lib/flanks.
+INNER_ENZYME = BsaI
 
 # How many bases of the backbone are used to fix where the map starts.
 ANCHOR_LENGTH = 40
@@ -73,20 +87,34 @@ def named_enzyme(name):
     return enzyme
 
 
-def load_backbone(path):
-    """A backbone from a file, or pYTK001 when none is given."""
-    if path is None:
+def whole_sequence(path):
+    """The whole sequence in a file.
+
+    A backbone is a whole vector, so it must never go through the feature
+    picker in lib/sequences: that would hand back one gene out of the vector
+    and call it the backbone.
+    """
+    if Path(path).suffix.lower() in (".fa", ".fasta"):
+        return sg.read_genes(path)[0][1]
+    return sg.read_map(path)["sequence"]
+
+
+def load_backbone(given):
+    """A backbone by file path or by published name, or pYTK001 by default.
+
+    A path that exists always wins. Otherwise the name is looked for among the
+    published maps, so --backbone pYTK047 works with no path typed.
+    """
+    if given is None or given == BACKBONE_NAME:
+        # pYTK001 comes from data/ytk_parts.tsv, stored already turned to
+        # SnapGene's own start point. See NOTES.md.
         return BACKBONE_NAME, backbone_sequence()
-    try:
-        found = sequences.read(path)
-    except sequences.AmbiguousCDS:
-        # A backbone is a whole vector, so its features do not matter here.
-        found = None
-    if found:
-        return Path(path).stem, found[0][1]
-    # Only a map file gets here, because sequences.read raises AmbiguousCDS
-    # when a map holds more than one candidate feature.
-    return Path(path).stem, sg.read_map(path)["sequence"]
+    path = Path(given)
+    if not path.exists():
+        path = PLASMIDS / f"{given}.gb"
+    if not path.exists():
+        sys.exit(f"--backbone {given}: no such file, and no {given}.gb in {PLASMIDS}")
+    return path.stem, whole_sequence(path)
 
 
 def backbone_sequence():
@@ -97,21 +125,13 @@ def backbone_sequence():
                 return row["sequence"].upper()
 
 
-def part_type_junctions():
-    """The overhang pair a Type 3 part must have, from the shared parts table."""
-    with open(PARTS_TABLE, newline="") as fh:
-        for row in csv.DictReader(fh, delimiter="\t"):
-            if row["part_type"] == PART_TYPE:
-                return row["junction_5"].upper(), row["junction_3"].upper()
-
-
-def plasmid_file_name(fragment_name, given_name):
+def plasmid_file_name(fragment_name, given_name, backbone_name):
     """What to call the plasmid file.
 
     The input file names it when it can. Otherwise the name says which part
     went into which vector, so a folder of files still reads clearly later.
     """
-    return given_name or f"{fragment_name}_{BACKBONE_NAME}"
+    return given_name or f"{fragment_name}_{backbone_name}"
 
 
 def map_format(fragment_file, chosen):
@@ -135,11 +155,10 @@ def map_format(fragment_file, chosen):
 # --- assembly ----------------------------------------------------------
 
 
-def cut_insert(fragment, enzyme=BsmBI):
-    """Cut the fragment with the entry enzyme and keep the piece between the two
-    designed cuts.
+def cut_insert(fragment, enzyme):
+    """Cut the fragment and keep the piece between the two designed cuts.
 
-    Some genes hold a BsmBI site inside the coding sequence. Cutting then
+    Some genes hold a site for that enzyme inside the coding sequence. Cutting then
     gives extra pieces in the middle. Joining them back puts the gene together
     again, so only the two outer cuts count and the gene is left as it was.
     """
@@ -154,23 +173,31 @@ def cut_insert(fragment, enzyme=BsmBI):
     return kept
 
 
-def insert_junctions(insert):
+def insert_junctions(insert, enzyme):
     """The overhang pair the insert would join a YTK assembly by.
 
-    These come from the inner BsaI sites, not the outer BsmBI ones. The BsmBI
+    These come from the inner BsaI sites, not the outer BsmBI ones. The outer
     cut gives the same pair of ends on every part type, because that pair is
     what fits the entry vector. It is the BsaI pair that says which slot of an
     assembly the part belongs in.
+
+    A Type IIS site sits outside its own cut, so cutting with BsaI takes both
+    BsaI sites away with the ends. Then the piece in hand already has the
+    part-type overhangs and there is nothing left to cut.
     """
-    pieces = Dseqrecord(str(insert.seq)).cut(BsaI)
-    if len(pieces) < 3:
-        raise WrongFragment("there is no pair of BsaI sites inside the fragment")
-    five = pieces[1].seq.five_prime_end()[1].upper()
-    three = str(Seq(pieces[-2].seq.three_prime_end()[1]).reverse_complement()).upper()
+    if enzyme is INNER_ENZYME:
+        pieces = [insert]
+    else:
+        pieces = Dseqrecord(str(insert.seq)).cut(INNER_ENZYME)
+        if len(pieces) < 3:
+            raise WrongFragment("there is no pair of BsaI sites inside the fragment")
+        pieces = pieces[1:-1]
+    five = pieces[0].seq.five_prime_end()[1].upper()
+    three = str(Seq(pieces[-1].seq.three_prime_end()[1]).reverse_complement()).upper()
     return five, three
 
 
-def cut_backbone(backbone, enzyme=BsmBI):
+def cut_backbone(backbone, enzyme):
     """Cut the backbone and keep the larger piece.
 
     In an entry vector the smaller piece is the dropout that the part replaces.
@@ -183,7 +210,19 @@ def cut_backbone(backbone, enzyme=BsmBI):
     return max(pieces, key=len)
 
 
-def assemble(fragment, backbone, enzyme=BsmBI, expect_junctions=True):
+def accepted_junctions(kept):
+    """The overhang pair a cut backbone will take a part by.
+
+    The backbone's 3' end meets the part's 5' overhang, so the pair is read in
+    the part's orientation. That way it can be compared with, and printed
+    beside, what insert_junctions gives.
+    """
+    five = kept.seq.five_prime_end()[1].upper()
+    three = str(Seq(kept.seq.three_prime_end()[1]).reverse_complement()).upper()
+    return three, five
+
+
+def assemble(fragment, backbone, enzyme, part_type):
     """Build the finished circular plasmid.
 
     A circle has no natural first base, so the map has to pick one. The start
@@ -206,16 +245,24 @@ def assemble(fragment, backbone, enzyme=BsmBI, expect_junctions=True):
         raise SequenceChanged(
             "the piece cut out is not in the fragment exactly as it was given")
 
-    junctions = insert_junctions(insert) if expect_junctions else None
-    if expect_junctions and junctions != part_type_junctions():
+    # This asks one question: is the fragment the part type that was declared.
+    # Whether the part fits this backbone is a different question, and the
+    # ligation below answers it.
+    junctions = insert_junctions(insert, enzyme)
+    expected = flanks.junctions(part_type)
+    if junctions != expected:
         raise WrongFragment(
-            f"its overhangs are {junctions[0]} and {junctions[1]}, but a Type "
-            f"{PART_TYPE} part for {BACKBONE_NAME} needs "
-            f"{part_type_junctions()[0]} and {part_type_junctions()[1]}. "
-            "This is the wrong part type for this entry vector")
+            f"its overhangs are {junctions[0]} and {junctions[1]}, but a type "
+            f"{part_type} part needs {expected[0]} and {expected[1]}")
 
     kept = cut_backbone(backbone, enzyme)
-    plasmid = (kept + insert).looped()
+    try:
+        plasmid = (kept + insert).looped()
+    except TypeError:
+        accepts = accepted_junctions(kept)
+        raise WrongFragment(
+            f"the part offers {junctions[0]} and {junctions[1]}, but the "
+            f"backbone accepts {accepts[0]} and {accepts[1]}")
     anchor = backbone[:ANCHOR_LENGTH].upper()
     circle = str(plasmid.seq).upper()
     if sg.find_in_circle(circle, anchor) is None:
@@ -236,7 +283,8 @@ class SequenceChanged(Exception):
 
 
 class WrongFragment(Exception):
-    """The fragment is not a flanked Type 3 part for this entry vector."""
+    """The fragment is not a flanked part of the type declared, or it does not
+    fit the backbone."""
 
 
 # --- main --------------------------------------------------------------
@@ -254,9 +302,11 @@ def main():
     ap.add_argument("--outdir",
                     help="where to write the maps "
                          "(default: a ytk_output/ folder beside the input)")
+    ap.add_argument("--type", default=DEFAULT_TYPE,
+                    help=f"YTK part type the fragments are (default {DEFAULT_TYPE})")
     ap.add_argument("--backbone", default=None,
-                    help=f"vector to clone into (.dna, .gb, .gbk, FASTA); "
-                         f"default {BACKBONE_NAME}")
+                    help=f"vector to clone into: a published pYTKnnn name, or a "
+                         f"file (.dna, .gb, .gbk, FASTA); default {BACKBONE_NAME}")
     ap.add_argument("--enzyme", default="BsmBI",
                     help="Type IIS enzyme to cut with (default BsmBI)")
     ap.add_argument("--format", default=None, choices=["genbank", "dna"],
@@ -273,10 +323,21 @@ def main():
                      "Say which one with --feature NAME.")
     enzyme = named_enzyme(args.enzyme)
     backbone_name, backbone = load_backbone(args.backbone)
-    # The Type 3 junction check only means something for the YTK entry reaction.
-    standard = args.backbone is None and args.enzyme == "BsmBI"
-    if not standard:
-        print(f"cloning into {backbone_name} with {args.enzyme}\n")
+    print(f"cloning type {args.type} fragments into {backbone_name} "
+          f"with {args.enzyme}\n")
+
+    # part_type rides along on the fragment file when ytk-add-overhangs wrote
+    # it, and is optional: a bare FASTA of fragments still clones. Every input
+    # file is read, not just the first, so a second fragment file's genes keep
+    # their part type too. A row that disagrees with --type stops the run here,
+    # before any plasmid is built.
+    part_types = {}
+    for path in args.input:
+        part_types.update(sg.read_column(path, sg.PART_TYPE_HEADERS))
+    for name, written in part_types.items():
+        if written and written != args.type:
+            sys.exit(f"{name}: the fragment file says part type {written}, but "
+                     f"--type says {args.type}. Nothing was written.")
 
     # Plasmid names, and what was done to each gene, come from the input file.
     # They are facts about the gene and not about the fragment, so they live
@@ -293,10 +354,11 @@ def main():
     # batch on disk for someone to find later.
     built = []
     for name, fragment, plasmid_name in genes:
-        plasmid_name = plasmid_file_name(name, given_names.get(name) or plasmid_name)
+        plasmid_name = plasmid_file_name(name, given_names.get(name) or plasmid_name,
+                                         backbone_name)
         try:
             built.append((name, fragment, plasmid_name,
-                          assemble(fragment, backbone, enzyme, standard)))
+                          assemble(fragment, backbone, enzyme, args.type)))
         except WrongFragment as problem:
             sys.exit(f"{name}: {problem}.\n"
                      f"Nothing was written. Your sequence was not changed.")
@@ -311,18 +373,10 @@ def main():
     maps = output.folder(args.outdir, args.input[0]) / "plasmids" / backbone_name
     maps.mkdir(parents=True, exist_ok=True)
 
-    # part_type rides along on the fragment file when ytk-add-overhangs wrote
-    # it, and is optional: a bare FASTA of fragments still clones. Every input
-    # file is read, not just the first, so a second fragment file's genes keep
-    # their part type too.
-    part_types = {}
-    for path in args.input:
-        part_types.update(sg.read_column(path, sg.PART_TYPE_HEADERS))
-
     suffix = ".gb" if map_format(args.input[0], args.format) == "genbank" else ".dna"
     width = max(len(p) for _, _, p, _ in built) + 2
     print(f"{'fragment':24s} {'plasmid':{width}s} {'frag bp':>8s} "
-          f"{'plasmid bp':>11s}  internal site")
+          f"{'plasmid bp':>11s}  internal BsmBI/BsaI")
     summary = [["plasmid", "sequence", "part_type", "codon_opt", "notes"]]
     flagged = []
     for name, gene, plasmid_name, plasmid in built:

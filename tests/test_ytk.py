@@ -64,12 +64,12 @@ BACKBONE = clone.backbone_sequence()
 # ytk-clone now takes the fragment as ordered, so the genes are flanked here
 # the same way ytk-add-overhangs flanks them. That makes these cases a test of
 # the two skills together.
-ADAPTERS = overhangs.read_overhangs()
-FRAGMENTS = {name: flanks.flank(seq, ADAPTERS["3"]) for name, seq in GENES.items()}
+FRAGMENTS = {name: flanks.flank(seq, flanks.adapters("3"))
+             for name, seq in GENES.items()}
 
 
 def build(gene_name):
-    return clone.assemble(FRAGMENTS[gene_name], BACKBONE)
+    return clone.assemble(FRAGMENTS[gene_name], BACKBONE, clone.BsmBI, "3")
 
 
 def reference(name):
@@ -114,13 +114,13 @@ class TestSequencesAreNeverChanged(unittest.TestCase):
         # cut. Adding the flanks for the person would assume a fragment design
         # they may never have ordered.
         with self.assertRaises(clone.WrongFragment):
-            clone.assemble(GENES["Pi_fim_NCS_c5"], BACKBONE)
+            clone.assemble(GENES["Pi_fim_NCS_c5"], BACKBONE, clone.BsmBI, "3")
 
     def test_the_wrong_part_type_is_refused(self):
         # Type 5 flanks cut cleanly, but the overhangs do not fit pYTK001.
-        fragment = flanks.flank(GENES["Pi_fim_NCS_c5"], ADAPTERS["5"])
+        fragment = flanks.flank(GENES["Pi_fim_NCS_c5"], flanks.adapters("5"))
         with self.assertRaises(clone.WrongFragment):
-            clone.assemble(fragment, BACKBONE)
+            clone.assemble(fragment, BACKBONE, clone.BsmBI, "3")
 
     def test_the_run_stops_if_a_gene_came_out_changed(self):
         # Make the assembly quietly change one base in the middle of the gene.
@@ -139,13 +139,14 @@ class TestSequencesAreNeverChanged(unittest.TestCase):
         clone.cut_insert = cut_a_changed_gene
         try:
             with self.assertRaises(clone.SequenceChanged):
-                clone.assemble(fragment, BACKBONE)
+                clone.assemble(fragment, BACKBONE, clone.BsmBI, "3")
         finally:
             clone.cut_insert = real_cut_insert
 
         # and the honest case still works once the meddling is undone
         self.assertIsNotNone(
-            sg.find_in_circle(clone.assemble(fragment, BACKBONE), gene))
+            sg.find_in_circle(clone.assemble(fragment, BACKBONE, clone.BsmBI, "3"),
+                              gene))
 
     def test_a_sequence_with_odd_letters_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -208,8 +209,9 @@ class TestPTP0457(unittest.TestCase):
     def test_length_is_the_backbone_piece_plus_the_cut_insert(self):
         # The two pieces join at two sticky ends. Each end is 4 bases that the
         # two pieces share, so the loop is 8 bases shorter than the sum.
-        expected = (len(clone.cut_backbone(BACKBONE))
-                    + len(clone.cut_insert(FRAGMENTS["Pi_fim_OMT_c1"])) - 2 * 4)
+        expected = (len(clone.cut_backbone(BACKBONE, clone.BsmBI))
+                    + len(clone.cut_insert(FRAGMENTS["Pi_fim_OMT_c1"], clone.BsmBI))
+                    - 2 * 4)
         self.assertEqual(expected, len(self.built))
 
     def test_still_matches_the_map_the_original_code_made(self):
@@ -486,18 +488,20 @@ class TestPlasmidNames(unittest.TestCase):
             self.read("name,sequence\na,ATGAAATAA\na,ATGCCCTAA\n")
 
     def test_a_given_name_is_used_as_it_stands(self):
-        self.assertEqual("pTP412", clone.plasmid_file_name("my_gene", "pTP412"))
+        self.assertEqual("pTP412", clone.plasmid_file_name("my_gene", "pTP412", "pYTK001"))
 
     def test_the_fallback_name_says_which_vector(self):
         # A folder full of <gene>_plasmid.dna files does not say what they are
         # in. Naming the vector means the file still reads clearly later.
         self.assertEqual("my_gene_pYTK001",
-                         clone.plasmid_file_name("my_gene", None))
+                         clone.plasmid_file_name("my_gene", None, "pYTK001"))
 
-    def test_the_fallback_vector_is_the_one_actually_used(self):
-        # The name would be a lie if it drifted from the backbone in the table.
+    def test_the_fallback_names_the_backbone_actually_used(self):
+        # The name would be a lie if it named the default vector after a run
+        # against a different one.
         self.assertEqual(BACKBONE, clone.backbone_sequence())
-        self.assertIn(clone.BACKBONE_NAME, clone.plasmid_file_name("g", None))
+        self.assertEqual("g_pYTK047",
+                         clone.plasmid_file_name("g", None, "pYTK047"))
 
 
 class TestAnnotation(unittest.TestCase):
@@ -604,6 +608,163 @@ class TestWhatWasDoneComesFromTheInputFile(unittest.TestCase):
                          rows["Pi_fim_NCS_c1"])
         self.assertEqual(("pTP414", "BsaI site removed; BsaI site in the CDS"),
                          rows["Pi_fim_NCS_c3"])
+
+
+class TestTheBackboneIsAnInput(unittest.TestCase):
+    """--backbone takes a name or a file, and a whole vector is loaded as a
+    whole vector."""
+
+    def test_a_published_name_is_found_without_a_path(self):
+        name, sequence = clone.load_backbone("pYTK047")
+        self.assertEqual("pYTK047", name)
+        self.assertGreater(len(sequence), 2000)
+
+    def test_a_vector_is_never_read_as_one_of_its_features(self):
+        # pYTK032 holds exactly one feature that looks like a gene, so the
+        # feature picker used to hand back that gene, 714 bp, and call it the
+        # backbone. A backbone is the whole plasmid.
+        name, sequence = clone.load_backbone("reference/ytk_plasmids/pYTK032.gb")
+        self.assertEqual("pYTK032", name)
+        self.assertEqual(2382, len(sequence))
+
+    def test_the_default_and_the_name_give_the_same_vector(self):
+        self.assertEqual(clone.load_backbone(None), clone.load_backbone("pYTK001"))
+        self.assertEqual(clone.backbone_sequence(), clone.load_backbone("pYTK001")[1])
+
+    def test_an_unknown_name_stops_the_run(self):
+        with self.assertRaises(SystemExit):
+            clone.load_backbone("pYTK999")
+
+
+class TestThePartTypeIsDeclared(unittest.TestCase):
+    """--type is checked on every run, whatever --backbone and --enzyme say."""
+
+    def fragment(self, gene, part_type):
+        return flanks.flank(GENES[gene], flanks.adapters(part_type))
+
+    def test_a_type_5_part_declared_as_type_3_is_refused(self):
+        # This is the regression the flags existed to hide: with the check off,
+        # a Type 5 fragment cloned into pYTK001 and wrote a map.
+        with self.assertRaises(clone.WrongFragment):
+            clone.assemble(self.fragment("Pi_fim_NCS_c5", "5"), BACKBONE,
+                           clone.BsmBI, "3")
+
+    def test_a_type_5_part_declared_as_type_5_builds(self):
+        # The entry vector takes any part type by design. Declaring the truth
+        # lets it through.
+        plasmid = clone.assemble(self.fragment("Pi_fim_NCS_c5", "5"), BACKBONE,
+                                 clone.BsmBI, "5")
+        self.assertIsNotNone(sg.find_in_circle(plasmid, GENES["Pi_fim_NCS_c5"]))
+
+    def test_the_junctions_read_the_same_through_either_enzyme(self):
+        fragment = self.fragment("Pi_fim_NCS_c1", "3")
+        outer = clone.insert_junctions(clone.cut_insert(fragment, clone.BsmBI),
+                                       clone.BsmBI)
+        inner = clone.insert_junctions(clone.cut_insert(fragment, clone.BsaI),
+                                       clone.BsaI)
+        self.assertEqual(outer, inner)
+        self.assertEqual(flanks.junctions("3"), outer)
+
+    def test_a_part_that_does_not_fit_the_backbone_says_so(self):
+        # A real Type 3 part, so the type check passes. pYTK047 is a type 234
+        # slot, so the two overhang pairs do not meet. That has to be a
+        # sentence, not a traceback out of pydna.
+        backbone = clone.load_backbone("pYTK047")[1]
+        with self.assertRaises(clone.WrongFragment) as refused:
+            clone.assemble(self.fragment("Pi_fim_NCS_c1", "3"), backbone,
+                           clone.BsaI, "3")
+        message = str(refused.exception)
+        for overhang in ("TATG", "ATCC", "AACG", "GCTG"):
+            self.assertIn(overhang, message)
+
+
+class TestTheFlagsReachTheRun(unittest.TestCase):
+    """The same checks, through main(), because that is where the flags used to
+    switch them off."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.out = Path(self.tmp.name) / "out"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def fragments(self, part_type, gene="Pi_fim_NCS_c1", name="Pi_fim_NCS_c1"):
+        path = Path(self.tmp.name) / f"fragments_{part_type}.csv"
+        flanked = flanks.flank(GENES[gene], flanks.adapters(part_type))
+        path.write_text("name,sequence,part_type\n"
+                        f"{name},{flanked},{part_type}\n")
+        return path
+
+    def run_clone(self, fragments, *extra, outdir=None):
+        argv = sys.argv
+        sys.argv = ["clone.py", "--input", str(fragments),
+                    "--outdir", str(outdir or self.out)] + list(extra)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                clone.main()
+        finally:
+            sys.argv = argv
+
+    def test_naming_the_default_vector_changes_nothing(self):
+        named = Path(self.tmp.name) / "named"
+        fragments = self.fragments("3")
+        self.run_clone(fragments)
+        self.run_clone(fragments, "--backbone", "pYTK001", outdir=named)
+        default = (self.out / "plasmids" / "pYTK001" / "Pi_fim_NCS_c1_pYTK001.gb")
+        self.assertEqual(default.read_bytes(),
+                         (named / "plasmids" / "pYTK001"
+                          / "Pi_fim_NCS_c1_pYTK001.gb").read_bytes())
+
+    def test_a_backbone_flag_does_not_switch_the_type_check_off(self):
+        with self.assertRaises(SystemExit):
+            self.run_clone(self.fragments("5"), "--type", "3",
+                           "--backbone", "reference/ytk_plasmids/pYTK001.gb")
+        self.assertFalse((self.out / "plasmids").exists())
+
+    def test_a_fragment_file_that_disagrees_with_the_type_stops_the_run(self):
+        with self.assertRaises(SystemExit):
+            self.run_clone(self.fragments("4"), "--type", "3")
+        self.assertFalse((self.out / "plasmids").exists())
+
+    def test_the_folder_and_the_file_name_follow_the_backbone(self):
+        # The same entry vector under another file name, so the reaction works
+        # and only the name differs. pYTK047 cannot be used here: it accepts a
+        # whole 2-3-4 cassette, which is more than one fragment.
+        vector = Path(self.tmp.name) / "my_vector.gb"
+        vector.write_bytes(Path("reference/ytk_plasmids/pYTK001.gb").read_bytes())
+        self.run_clone(self.fragments("3"), "--backbone", str(vector))
+        folder = self.out / "plasmids" / "my_vector"
+        self.assertTrue(folder.is_dir())
+        self.assertFalse((self.out / "plasmids" / "pYTK001").exists())
+        self.assertIn("Pi_fim_NCS_c1_my_vector.gb",
+                      [path.name for path in folder.iterdir()])
+
+
+class TestThePartTypeTables(unittest.TestCase):
+    """The two data tables have to agree, or a part type means one thing in the
+    flanks and another in the check."""
+
+    def test_every_type_has_the_published_overhangs_in_its_adapters(self):
+        for part_type in flanks._table(flanks.PART_TYPE_TABLE):
+            with self.subTest(part_type):
+                adapters = flanks.adapters(part_type)
+                upstream, downstream = flanks.junctions(part_type)
+                left = (adapters["left_adapter"] + "ATG").upper()
+                self.assertTrue(left.startswith(upstream))
+                self.assertTrue(adapters["right_adapter"].upper().endswith(downstream))
+
+    def test_a_missing_column_reads_as_an_empty_string(self):
+        self.assertEqual("", flanks.adapters("1")["coding"])
+
+    def test_an_unknown_type_stops_the_run(self):
+        with self.assertRaises(SystemExit):
+            flanks.adapters("nonsense")
+
+    def test_a_type_with_no_published_pair_stops_the_run(self):
+        # custom has NNNN adapters, so it has to be finished by hand.
+        with self.assertRaises(SystemExit):
+            flanks.junctions("custom")
 
 
 if __name__ == "__main__":

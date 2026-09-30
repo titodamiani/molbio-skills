@@ -73,10 +73,12 @@ def main():
           f"{'BsaI':>4s}  verdict")
     passed = 0
     for name, sequence, _ in found:
-        faults = cds.problems(sequence)
+        # "full": this skill asks one question, is this a whole coding
+        # sequence, so the type is not a choice here.
+        faults = cds.problems(sequence, "full")
         # Not `notes`: that is the module this file imports, and shadowing it
         # here would break the first call added to this function.
-        remarks = cds.warnings(sequence) if not faults else []
+        remarks = cds.warnings(sequence, "full") if not faults else []
         bsmbi = enzymes.count(sequence, "BsmBI")
         bsai = enzymes.count(sequence, "BsaI")
         if faults:

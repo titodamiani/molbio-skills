@@ -1,9 +1,14 @@
 """Design PCR primers that amplify a coding sequence with the YTK flanks on.
 
-The product of the PCR is already YTK-compatible, so it drops straight into the
-pYTK001 entry vector in a BsmBI Golden Gate reaction.
+The product of the PCR is already YTK-compatible, so it drops straight into an
+entry vector in a BsmBI Golden Gate reaction.
 
     python3 design_primers.py --input genes.csv
+    python3 design_primers.py --input parts.csv --type 3a
+
+The part type defaults to 3, a whole coding sequence, and is printed on every
+run. It is never read off the sequence: 3 against 3a against 3b is a design
+decision, not a property of the DNA.
 
 One CSV comes out, ytk_primers.csv, two rows per sequence. Input sequences are
 never changed. Without --outdir it goes in a ytk_output/ folder beside the
@@ -23,22 +28,13 @@ import primers         # noqa: E402
 import report          # noqa: E402
 import sequences       # noqa: E402
 
-OVERHANG_TABLE = ROOT / "data" / "ytk_overhangs.tsv"
-PART_TYPE = "3"
+# The part type this skill designs for unless --type says otherwise.
+DEFAULT_TYPE = "3"
 
 # The spare bases at the outer end of each primer. Four is the shortest that
 # still leaves BsmBI room to cut, and nothing has ever wanted a different
 # number, so it is a constant rather than a flag.
 PAD = flanks.MIN_PAD
-
-
-def adapters():
-    """The Type 3 adapter pair, from the shared table."""
-    with open(OVERHANG_TABLE, newline="") as fh:
-        for row in csv.DictReader(fh, delimiter="\t"):
-            if row["part_type"] == PART_TYPE:
-                return row
-    sys.exit(f"{OVERHANG_TABLE}: no row for part type {PART_TYPE}")
 
 
 def collect(inputs, feature):
@@ -58,21 +54,24 @@ def main():
     parser.add_argument("--input", nargs="+", required=True,
                         help=".fa, .fasta, .csv, .gb, .gbk or .dna")
     parser.add_argument("--feature", help="which feature holds the CDS, for map files")
+    parser.add_argument("--type", default=DEFAULT_TYPE,
+                        help=f"YTK part type (default {DEFAULT_TYPE})")
     parser.add_argument("--outdir",
                         help="where to write ytk_primers.csv "
                              "(default: a ytk_output/ folder beside the input)")
     args = parser.parse_args()
 
-    adapter_row = adapters()
+    adapter_row = flanks.adapters(args.type)
     found = collect(args.input, args.feature)
     log = report.Report()
+    print(f"designing type {args.type} primers\n")
 
     rows, designs = [], []
     for name, sequence in found:
-        faults = cds.problems(sequence)
+        faults = cds.problems(sequence, adapter_row["coding"])
         if faults:
             for fault in faults:
-                log.block(name, f"not a Type 3 CDS: it {fault}")
+                log.block(name, f"does not fit type {args.type}: it {fault}")
             continue
         designed = primers.design(name, sequence, adapter_row, PAD)
         if "blocked" in designed:
